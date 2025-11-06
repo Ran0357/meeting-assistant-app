@@ -1,0 +1,7 @@
+{
+  "name": "会議アシスタントアプリ",
+  "description": "Gemini APIを使用して、リアルタイム音声またはアップロードされたファイルから会議の議事録を自動的に生成するWebアプリケーション。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
