@@ -16,8 +16,6 @@ dist-ssr
 # Node modules
 node_modules/
 
-__pycache__/
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
