@@ -12,9 +12,10 @@ dist
 dist-ssr
 .env
 *.local
-
 # Node modules
 node_modules/
+
+__pycache__/
 
 # Editor directories and files
 .vscode/*
