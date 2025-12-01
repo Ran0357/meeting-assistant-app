@@ -1,7 +1,4 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-// Fix: Removed LiveSession as it is not exported from @google/genai
-import { GoogleGenAI, LiveServerMessage, Modality, Blob } from "@google/genai";
 import { MeetingMinutes } from '../types';
 import { generateMinutesFromText } from '../services/geminiService';
 import { Spinner } from './Spinner';
@@ -13,161 +10,125 @@ interface LiveTranscriptionScreenProps {
   onBack: () => void;
 }
 
-// Audio utility functions
-function encode(bytes: Uint8Array): string {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-function createBlob(data: Float32Array): Blob {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    int16[i] = data[i] < 0 ? data[i] * 32768 : data[i] * 32767;
-  }
-  return {
-    data: encode(new Uint8Array(int16.buffer)),
-    mimeType: 'audio/pcm;rate=16000',
-  };
-}
-
 const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({ onMinutesGenerated, onError, onBack }) => {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [transcriptHistory, setTranscriptHistory] = useState<string[]>([]);
   const [currentTranscript, setCurrentTranscript] = useState('');
 
-  // Fix: Changed type to `any` as LiveSession is not an exported type.
-  const sessionRef = useRef<any | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
-  const mediaStreamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  
-  const stopTranscription = useCallback(() => {
-    if (isTranscribing) {
-      if (sessionRef.current) {
-        sessionRef.current.close();
-        sessionRef.current = null;
-      }
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-      }
-      if (scriptProcessorRef.current) {
-        scriptProcessorRef.current.disconnect();
-        scriptProcessorRef.current = null;
-      }
-      if (mediaStreamSourceRef.current) {
-        mediaStreamSourceRef.current.disconnect();
-        mediaStreamSourceRef.current = null;
-      }
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
-      setIsTranscribing(false);
-    }
-  }, [isTranscribing]);
+  const recognitionRef = useRef<any | null>(null);
+  const lastCommittedTranscriptRef = useRef<string>('');
+  const clearTimeoutRef = useRef<number | null>(null);
+  // Keep a ref for the transcribing state so handlers can access the latest
+  // value without stale closures.
+  const transcribingRef = useRef<boolean>(false);
 
-  const startTranscription = async () => {
+  const stopTranscription = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+
+    if (clearTimeoutRef.current) {
+      clearTimeout(clearTimeoutRef.current);
+      clearTimeoutRef.current = null;
+    }
+    transcribingRef.current = false;
+    setIsTranscribing(false);
+  }, []);
+
+  const startTranscription = useCallback(() => {
     if (isTranscribing) return;
     setIsTranscribing(true);
     setTranscriptHistory([]);
     setCurrentTranscript('');
+    lastCommittedTranscriptRef.current = '';
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      onError('このブラウザは Web Speech API をサポートしていません。');
+      setIsTranscribing(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      let finalText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (res.isFinal) {
+          finalText += res[0].transcript;
+        } else {
+          interim += res[0].transcript;
+        }
+      }
+
+      if (finalText.trim()) {
+        const finalTrim = finalText.trim();
+        setTranscriptHistory(prev => {
+          if (prev.length > 0 && prev[prev.length - 1] === finalTrim) return prev;
+          return [...prev, finalTrim];
+        });
+        lastCommittedTranscriptRef.current = finalTrim;
+        setCurrentTranscript('');
+      } else {
+        setCurrentTranscript(interim);
+      }
+    };
+
+    recognition.onerror = (e: any) => {
+      console.error('SpeechRecognition error', e);
+      onError(`音声認識エラー: ${e.error || e.message || '不明なエラー'}`);
+      stopTranscription();
+    };
+
+    recognition.onend = () => {
+      // The Web Speech API sometimes stops after a few final results.
+      // If the user is still in transcribing mode, restart recognition to
+      // provide continuous listening.
+      recognitionRef.current = null;
+      if (transcribingRef.current) {
+        try {
+          // slight delay helps avoid quick stop/start thrash
+          setTimeout(() => {
+            try { recognition.start(); recognitionRef.current = recognition; } catch (e) { console.warn('restart failed', e); }
+          }, 200);
+        } catch (e) {
+          console.warn('failed to restart recognition', e);
+          transcribingRef.current = false;
+          setIsTranscribing(false);
+        }
+      } else {
+        setIsTranscribing(false);
+      }
+    };
 
     try {
-      if (!process.env.API_KEY) {
-        throw new Error("APIキーが設定されていません。");
-      }
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-        callbacks: {
-          onopen: () => { console.log('接続が開かれました。'); },
-          onmessage: (message: LiveServerMessage) => {
-            if (message.serverContent?.inputTranscription) {
-              const text = message.serverContent.inputTranscription.text;
-              setCurrentTranscript(prev => prev + text);
-            }
-            if (message.serverContent?.turnComplete) {
-              // Fix: Use functional update to get the latest transcript and avoid stale closures.
-              setCurrentTranscript(prevTranscript => {
-                if (prevTranscript) {
-                  setTranscriptHistory(prevHistory => [...prevHistory, prevTranscript]);
-                }
-                return '';
-              });
-            }
-          },
-          onerror: (e: ErrorEvent) => {
-            console.error('エラー:', e);
-            onError(`リアルタイム接続エラー: ${e.message}`);
-            stopTranscription();
-          },
-          onclose: (e: CloseEvent) => {
-            console.log('接続が閉じられました。');
-          },
-        },
-        config: {
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-        },
-      });
-
-      // Fix: Per Gemini API guidelines, use the promise to handle the session
-      // to avoid race conditions. We still need the resolved session to close it.
-      sessionPromise.then(session => {
-        sessionRef.current = session;
-      }).catch(error => {
-        console.error("接続の確立に失敗しました:", error);
-        if (error instanceof Error) {
-            onError(`接続に失敗しました: ${error.message}`);
-        } else {
-            onError("接続中に不明なエラーが発生しました。");
-        }
-        stopTranscription();
-      });
-      
-      mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Fix: Cast window to `any` to support vendor-prefixed webkitAudioContext
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(mediaStreamRef.current);
-      scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-      
-      scriptProcessorRef.current.onaudioprocess = (audioProcessingEvent) => {
-        const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
-        const pcmBlob = createBlob(inputData);
-        // Fix: Use the sessionPromise to send data as per Gemini API guidelines.
-        sessionPromise.then((session) => {
-          session.sendRealtimeInput({ media: pcmBlob });
-        });
-      };
-      
-      mediaStreamSourceRef.current.connect(scriptProcessorRef.current);
-      scriptProcessorRef.current.connect(audioContextRef.current.destination);
-
-    } catch (error) {
-      console.error("文字起こしの開始に失敗しました:", error);
-      if (error instanceof Error) {
-        onError(`マイクへのアクセスに失敗しました: ${error.message}`);
-      } else {
-        onError("マイクへのアクセス中に不明なエラーが発生しました。");
-      }
-      stopTranscription();
+      recognition.start();
+      recognitionRef.current = recognition;
+      transcribingRef.current = true;
+    } catch (e) {
+      onError('音声認識を開始できませんでした。マイクの許可を確認してください。');
+      transcribingRef.current = false;
+      setIsTranscribing(false);
     }
-  };
+  }, [isTranscribing, onError, stopTranscription]);
 
   const handleGenerateMinutes = async () => {
     setIsLoading(true);
     const fullTranscript = [...transcriptHistory, currentTranscript].join(' ').trim();
     if (!fullTranscript) {
-      onError("議事録を生成するための文字起こしがありません。");
+      onError('議事録を生成するための文字起こしがありません。');
       setIsLoading(false);
       return;
     }
@@ -175,10 +136,10 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({ onMin
       const minutes = await generateMinutesFromText(fullTranscript);
       onMinutesGenerated(minutes);
     } catch (error) {
-       if (error instanceof Error) {
+      if (error instanceof Error) {
         onError(error.message);
       } else {
-        onError("不明なエラーが発生しました。");
+        onError('不明なエラーが発生しました。');
       }
     } finally {
       setIsLoading(false);
