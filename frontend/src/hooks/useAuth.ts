@@ -11,6 +11,7 @@ export const useAuth = () => {
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
+    
     if (!token) {
       setLoading(false);
       return;

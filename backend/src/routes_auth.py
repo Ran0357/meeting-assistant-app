@@ -70,3 +70,5 @@ def logout() -> Response:
     supabase_auth_service.logout(access_token=token)
     return jsonify({"message": "Logout successful."}), 200
 
+
+

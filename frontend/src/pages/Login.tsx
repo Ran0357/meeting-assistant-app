@@ -16,6 +16,7 @@ export default function Login() {
       if (!res.ok) throw new Error(data.error || data.message || 'ログイン失敗');
 
       localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
       setMessage('ログイン成功！');
       window.location.href = '/meeting';
     } catch (err: any) {

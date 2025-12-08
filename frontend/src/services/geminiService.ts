@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { MeetingMinutes } from '../types';
+import { GeneratedMinutes, MeetingMinutes } from '../types';
 if (!process.env.API_KEY) {
   throw new Error("API_KEY環境変数が設定されていません。");
 }
@@ -12,7 +12,7 @@ const minutesSchema = {
       type: Type.STRING,
       description: '会議全体の簡潔な要約。',
     },
-    keyPoints: {
+    key_points: {
       type: Type.ARRAY,
       description: '議論された主要なトピックや決定事項のリスト。',
       items: { type: Type.STRING },
@@ -31,7 +31,7 @@ const minutesSchema = {
       },
     },
   },
-  required: ['summary', 'keyPoints', 'actionItems'],
+  required: ['summary', 'key_points', 'actionItems'],
 };
 // 簡易言語検出とクリーンアップ
 function detectPrimaryLanguage(text: string): 'ja' | 'en' {
@@ -55,7 +55,7 @@ function sanitizeTranscript(text: string): string {
   // 制御文字削除・連続空白を単一スペースへ、先頭末尾トリム
   return text.replace(/[\x00-\x1F\x7F]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
-export const generateMinutesFromText = async (transcript: string): Promise<MeetingMinutes> => {
+export const generateMinutesFromText = async (transcript: string): Promise<GeneratedMinutes> => {
   const clean = sanitizeTranscript(transcript);
   const primaryLang = detectPrimaryLanguage(clean);
   const langLabel = primaryLang === 'ja' ? '日本語' : '英語';
@@ -64,7 +64,7 @@ export const generateMinutesFromText = async (transcript: string): Promise<Meeti
 出力言語について:
 - 出力は「${langLabel}」で行ってください（文字起こしの主な言語に基づいて選択済み）。
 - 文字起こし内に他の言語やスクリプト（例: デーヴァナーガリー等）の断片が含まれる場合、それらは選択した出力言語に翻訳してからJSONの値として出力してください。元の断片はJSON内に残さないでください。
-- JSON内の値（summary, keyPoints, actionItems の文字列）は上記言語で記述してください。フィールド名（キー）は既存の英語キーのままにしてください。
+- JSON内の値（summary, key_points, actionItems の文字列）は上記言語で記述してください。フィールド名（キー）は既存の英語キーのままにしてください。
 アクションアイテムには、担当者と期限を必ず含めてください。期限は可能な限り YYYY-MM-DD 形式で出力してください。
 期限が特定できない場合は '未定' と出力してください。
 文字起こし（不要な制御文字は削除済み）:
@@ -87,20 +87,21 @@ ${clean}
     // 正規化：期限が無ければ '未定'、担当者が無ければ '未割り当て' を補う
     if (
       'summary' in parsedJson &&
-      'keyPoints' in parsedJson &&
+      'key_points' in parsedJson &&
       'actionItems' in parsedJson &&
       Array.isArray(parsedJson.actionItems)
     ) {
-      const normalized = {
+      const normalized: GeneratedMinutes = {
         summary: parsedJson.summary,
-        keyPoints: parsedJson.keyPoints,
+        key_points: parsedJson.key_points,
         actionItems: parsedJson.actionItems.map((item: any) => ({
-          task: typeof item.task === 'string' ? item.task : String(item.task ?? ''),
-          assignee: typeof item.assignee === 'string' && item.assignee ? item.assignee : '未割り当て',
-          deadline: typeof item.deadline === 'string' && item.deadline ? item.deadline : '未定',
+          description: typeof item.task === 'string' ? item.task : String(item.task ?? ''),
+          owner_name: typeof item.assignee === 'string' && item.assignee ? item.assignee : '未割り当て',
+          due_date: typeof item.deadline === 'string' && item.deadline ? item.deadline : '未定',
         })),
-      };
-      return normalized as MeetingMinutes;
+        participants: [],  // 必要に応じて
+    };
+      return normalized as GeneratedMinutes;
     } else {
       throw new Error("APIからのレスポンス形式が正しくありません。");
     }
