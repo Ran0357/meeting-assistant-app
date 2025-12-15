@@ -94,17 +94,31 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
 
       // actionItems 保存
       if (editableMinutes.actionItems?.length) {
-        const todos = editableMinutes.actionItems.map(a => ({
+        const todos = editableMinutes.actionItems.map((a) => ({
+
           document_id: documentId,
           description: a.description,
+
           owner_name: a.owner_name || null,
-          slack_id: a.slack_id || null,
-          due_date: a.due_date || null,
+
+          // ★ 空文字（""）を null に変換する
+          due_date:
+            !a.due_date || a.due_date === "未定"
+              ? null
+              : a.due_date,
+
           reminder_at: a.reminder_at || null,
           last_reminded_at: a.last_reminded_at || null,
-          status: a.status || 'open',
+
+          status: a.status || "open",
         }));
-        await supabase.from('document_todos').upsert(todos);
+
+        const { data: todoData, error: todoError } = await supabase
+          .from("document_todos")
+          .upsert(todos)
+          .select();
+
+
       }
 
       setEditableMinutes(prev => ({ ...prev, participants }));
@@ -119,12 +133,38 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     }
   };
 
-  const handleNotifySlack = () => {
-    console.log('Notify Slack:', editableMinutes);
-    setIsNotified(true);
-    setTimeout(() => setIsNotified(false), 2000);
-    alert('（デモ）Slackに通知を送りました。');
+  const handleNotifySlack = async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const access_token = sessionData?.session?.access_token;
+      if (!access_token) throw new Error("アクセストークンがありません");
+
+      const res = await fetch(
+        "https://eltdfrnvqseivxqfoxqe.supabase.co/functions/v1/slack",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${access_token}`,
+          },
+          body: JSON.stringify({ text: "今日の会議のまとめができました！アクションアイテムをチェックしてください。", actionItems: editableMinutes.actionItems }),
+        }
+      );
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Slack通知に失敗");
+      }
+
+      alert("Slackに通知しました！");
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message);
+    }
   };
+
+
+
 
   return (
     <div className="w-full flex flex-col items-center">
@@ -180,7 +220,12 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
                   <input
                     type="date"
                     value={item.due_date || ''}
-                    onChange={e => handleActionItemChange(index, 'due_date', e.target.value)}
+                    onChange={e => handleActionItemChange(
+                      index,
+                      'due_date',
+                      e.target.value || null
+                    )
+                    }
                     className="mt-1 w-full p-2 border rounded"
                   />
                 </div>
