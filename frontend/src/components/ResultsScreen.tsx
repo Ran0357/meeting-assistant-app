@@ -26,7 +26,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     setEditableMinutes(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleActionItemChange = (index: number, field: keyof ActionItem, value: string) => {
+  const handleActionItemChange = (index: number, field: keyof ActionItem, value: string | null) => {
     const updated = [...(editableMinutes.actionItems || [])];
     updated[index] = { ...updated[index], [field]: value };
     setEditableMinutes(prev => ({ ...prev, actionItems: updated }));
@@ -92,33 +92,44 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
         await supabase.from('document_participants').upsert(participantRecords);
       }
 
+      const normalizeDate = (value?: string | null): string | null => {
+        if (!value) return null;
+
+        // YYYY-MM-DD だけを許可
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return value;
+        }
+
+        return null; // 自然言語は捨てる
+      };
+
       // actionItems 保存
       if (editableMinutes.actionItems?.length) {
         const todos = editableMinutes.actionItems.map((a) => ({
-
           document_id: documentId,
           description: a.description,
-
           owner_name: a.owner_name || null,
-
-          // ★ 空文字（""）を null に変換する
-          due_date:
-            !a.due_date || a.due_date === "未定"
-              ? null
-              : a.due_date,
-
+          due_date: normalizeDate(a.due_date),
           reminder_at: a.reminder_at || null,
           last_reminded_at: a.last_reminded_at || null,
-
           status: a.status || "open",
+          slack_channel: a.slack_channel || null,
+          reminded_before: a.reminded_before || false,
+          notify_before: a.notify_before || false,
+          notified_before_at: a.notified_before_at || null
         }));
 
         const { data: todoData, error: todoError } = await supabase
           .from("document_todos")
-          .upsert(todos)
+          .insert(todos)
           .select();
 
+        if (todoError) {
+          console.error('Todo保存エラー:', todoError);
+          throw new Error(`Todo保存に失敗: ${todoError.message}`);
+        }
 
+        console.log('保存されたTodo:', todoData);
       }
 
       setEditableMinutes(prev => ({ ...prev, participants }));
@@ -139,32 +150,43 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
       const access_token = sessionData?.session?.access_token;
       if (!access_token) throw new Error("アクセストークンがありません");
 
-      const res = await fetch(
-        "https://eltdfrnvqseivxqfoxqe.supabase.co/functions/v1/slack",
+      const normalizedItems = (editableMinutes.actionItems || []).map(item => ({
+        ...item,
+        due_date: item.due_date || null,
+      }));
+
+      // ① 即日通知（既存）
+      await fetch(
+        "https://eltdfrnvqseivxqfoxqe.supabase.co/functions/v1/slack_reminder",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${access_token}`,
+            Authorization: `Bearer ${access_token}`,
           },
-          body: JSON.stringify({ text: "今日の会議のまとめができました！アクションアイテムをチェックしてください。", actionItems: editableMinutes.actionItems }),
+          body: JSON.stringify({ items: normalizedItems }),
         }
       );
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Slack通知に失敗");
-      }
+      // ② 前日通知をDBに登録（notify_beforeフラグをtrueに設定）
+      const { error } = await supabase
+        .from("document_todos")
+        .update({
+          notify_before: true,
+        })
+        .in(
+          "description",
+          normalizedItems.map(i => i.description)
+        );
 
-      alert("Slackに通知しました！");
+      if (error) throw error;
+
+      alert("即日通知完了 & 前日通知を設定しました！");
     } catch (err: any) {
       console.error(err);
       alert(err.message);
     }
   };
-
-
-
 
   return (
     <div className="w-full flex flex-col items-center">
@@ -219,12 +241,13 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
                   <label className="text-sm font-medium">期限</label>
                   <input
                     type="date"
-                    value={item.due_date || ''}
-                    onChange={e => handleActionItemChange(
-                      index,
-                      'due_date',
-                      e.target.value || null
-                    )
+                    value={item.due_date || ""}
+                    onChange={e =>
+                      handleActionItemChange(
+                        index,
+                        "due_date",
+                        e.target.value || null
+                      )
                     }
                     className="mt-1 w-full p-2 border rounded"
                   />

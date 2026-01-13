@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { serve } from "@std/http";
 
 serve(async (req) => {
   try {
@@ -14,25 +14,31 @@ serve(async (req) => {
 
     const { text, actionItems } = await req.json();
 
-    
-
     if (!text) {
       return new Response(JSON.stringify({ error: "text is required" }), {
         status: 400,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
       });
     }
 
-    // デバッグ用ログ
     const token = Deno.env.get("SLACK_BOT_TOKEN");
     const channel = Deno.env.get("SLACK_DEFAULT_CHANNEL");
 
-     // Slack に送るメッセージ作成
     let message = text;
 
     if (actionItems && actionItems.length > 0) {
       const itemsText = actionItems
-        .map((a: any, i: number) => `${i + 1}. ${a.description} 担当: ${a.owner_name || '未定'} 期限: ${a.due_date || '未定'}`)
+        .map(
+          (a: any, i: number) =>
+            `${i + 1}. ${a.description} 担当: ${a.owner_name || "未定"} 期限: ${
+              a.due_date || "未定"
+            }`,
+        )
         .join("\n");
+
       message += "\n\nアクションアイテム:\n" + itemsText;
     }
 
@@ -48,9 +54,13 @@ serve(async (req) => {
     const data = await slackRes.json();
 
     if (!data.ok) {
-      console.log("Slack API error:", data);
+      console.error("Slack API error:", data);
       return new Response(JSON.stringify({ error: data.error }), {
         status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
       });
     }
 
@@ -61,8 +71,18 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
     });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("Function error:", e);
-    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+
+    const message =
+      e instanceof Error ? e.message : "Unknown server error";
+
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json",
+      },
+    });
   }
 });
