@@ -5,14 +5,24 @@ export type AppState = 'SELECT' | 'LIVE' | 'UPLOAD' | 'RESULTS';
  * ─────────────────────────────── */
 export interface ActionItem {
   id?: string;                  // 主キー
+  document_id?: string;         // 外部キー（documents.id）
   description: string;          // タスク内容
-  owner_name?: string;          // 担当者名（AI抽出値）
-  due_date?: string;            // YYYY-MM-DD
-  slack_id?: string | null;     // 通知用
+  owner_name?: string | null;   // 担当者名（AI抽出値）
+  due_date?: string | null;     // YYYY-MM-DD（date型）
+  slack_id?: string | null;     // 通知用（削除予定？スキーマに存在しない）
 
-  reminder_at?: string | null;
-  last_reminded_at?: string | null;
-  status?: 'open' | 'in_progress' | 'done';
+  reminder_at?: string | null;         // timestamp with time zone
+  last_reminded_at?: string | null;    // timestamp with time zone
+  status?: 'open' | 'in_progress' | 'done';  // デフォルト: 'open'
+
+  // ★ 追加：データベーススキーマに存在するカラム
+  slack_channel?: string | null;       // Slack通知先チャンネル
+  reminded_before?: boolean;           // 前日通知済みフラグ（デフォルト: false）
+  notify_before?: boolean;             // 前日通知設定フラグ（デフォルト: false）
+  notified_before_at?: string | null;  // 前日通知送信日時（timestamp without time zone）
+
+  created_at?: string;                 // timestamp with time zone
+  updated_at?: string;                 // timestamp with time zone
 }
 
 /* ───────────────────────────────
@@ -20,6 +30,7 @@ export interface ActionItem {
  * ─────────────────────────────── */
 export interface Participant {
   id?: string;
+  document_id?: string;         // 外部キー（documents.id）
   name: string;                 // 表示名
   slack_id?: string | null;     // Slack通知に必要
   role?: string | null;         // PM / client / など任意
@@ -36,8 +47,6 @@ export interface GeneratedMinutes {
   actionItems: ActionItem[];
   participants?: Participant[]; // フォームで追加する
 }
-
-
 
 /* ───────────────────────────────
  * MeetingMinutes = documents

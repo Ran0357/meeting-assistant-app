@@ -25,7 +25,10 @@ const minutesSchema = {
         properties: {
           task: { type: Type.STRING, description: '実行すべきタスクの内容。' },
           assignee: { type: Type.STRING, description: 'タスクの担当者。不明な場合は「未割り当て」とする。' },
-          deadline: { type: Type.STRING, description: "タスクの期限（可能ならYYYY-MM-DD形式）。不明な場合は '未定' とする。" },
+          deadline: {
+  type: Type.STRING,
+  description: "タスクの期限（必ず YYYY-MM-DD 形式）。期限が特定できない場合は空文字にする。",
+},
         },
         required: ['task', 'assignee'],
       },
@@ -66,7 +69,9 @@ export const generateMinutesFromText = async (transcript: string): Promise<Gener
 - 文字起こし内に他の言語やスクリプト（例: デーヴァナーガリー等）の断片が含まれる場合、それらは選択した出力言語に翻訳してからJSONの値として出力してください。元の断片はJSON内に残さないでください。
 - JSON内の値（summary, key_points, actionItems の文字列）は上記言語で記述してください。フィールド名（キー）は既存の英語キーのままにしてください。
 アクションアイテムには、担当者と期限を必ず含めてください。期限は可能な限り YYYY-MM-DD 形式で出力してください。
-期限が特定できない場合は '未定' と出力してください。
+期限は必ず YYYY-MM-DD 形式で出力してください。
+期限が特定できない場合は空文字 "" を出力してください。
+「未定」「TBD」などの文字列は絶対に使用しないでください。
 文字起こし（不要な制御文字は削除済み）:
 ---
 ${clean}
@@ -92,15 +97,26 @@ ${clean}
       Array.isArray(parsedJson.actionItems)
     ) {
       const normalized: GeneratedMinutes = {
-        summary: parsedJson.summary,
-        key_points: parsedJson.key_points,
-        actionItems: parsedJson.actionItems.map((item: any) => ({
-          description: typeof item.task === 'string' ? item.task : String(item.task ?? ''),
-          owner_name: typeof item.assignee === 'string' && item.assignee ? item.assignee : '未割り当て',
-          due_date: typeof item.deadline === 'string' && item.deadline ? item.deadline : '未定',
-        })),
-        participants: [],  // 必要に応じて
-    };
+  summary: parsedJson.summary,
+  key_points: parsedJson.key_points,
+  actionItems: parsedJson.actionItems.map((item: any) => ({
+    description:
+      typeof item.task === 'string'
+        ? item.task
+        : String(item.task ?? ''),
+    owner_name:
+      typeof item.assignee === 'string' && item.assignee
+        ? item.assignee
+        : '未割り当て',
+    due_date:
+      typeof item.deadline === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(item.deadline)
+        ? item.deadline
+        : null,
+  })),
+  participants: [],
+};
+
       return normalized as GeneratedMinutes;
     } else {
       throw new Error("APIからのレスポンス形式が正しくありません。");
