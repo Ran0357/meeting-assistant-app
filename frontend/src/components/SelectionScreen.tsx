@@ -5,33 +5,68 @@ import { MicIcon, UploadIcon } from './Icons';
 interface SelectionScreenProps {
   onSelectLive: () => void;
   onSelectUpload: () => void;
+  onSelectViewPastDocuments: () => void;
 }
 
-const SelectionScreen: React.FC<SelectionScreenProps> = ({ onSelectLive, onSelectUpload }) => {
+const SelectionScreen: React.FC<SelectionScreenProps> = ({ onSelectLive, onSelectUpload, onSelectViewPastDocuments }) => {
   return (
     <div className="w-full">
-      <h2 className="text-2xl font-bold text-center mb-8 text-slate-700">議事録の作成方法を選択してください</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="mb-6">
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <button
           onClick={onSelectLive}
-          className="group flex flex-col items-center justify-center p-8 bg-blue-50 rounded-xl border-2 border-transparent hover:border-blue-500 hover:bg-white transition-all duration-300 transform hover:-translate-y-1 shadow-md hover:shadow-xl"
+          className="group flex flex-col p-6 bg-white border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all text-left"
         >
-          <div className="bg-blue-500 text-white rounded-full p-4 mb-4 group-hover:bg-blue-600 transition-colors">
-            <MicIcon />
+          <div className="flex items-center mb-4">
+            <div className="bg-blue-600 text-white rounded-md p-3">
+              <MicIcon />
+            </div>
+            <h3 className="ml-4 text-lg font-semibold text-gray-900">リアルタイム文字起こし</h3>
           </div>
-          <h3 className="text-xl font-semibold text-slate-800">リアルタイム文字起こし</h3>
-          <p className="text-slate-500 mt-2 text-center">会議をしながらリアルタイムで議事録を生成します。</p>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            会議をしながらリアルタイムで文字起こしを行い、議事録を自動生成します。
+          </p>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <span className="text-xs font-medium text-blue-600 group-hover:text-blue-700">機能を開始 →</span>
+          </div>
         </button>
         <button
           onClick={onSelectUpload}
-          className="group flex flex-col items-center justify-center p-8 bg-green-50 rounded-xl border-2 border-transparent hover:border-green-500 hover:bg-white transition-all duration-300 transform hover:-translate-y-1 shadow-md hover:shadow-xl"
+          className="group flex flex-col p-6 bg-white border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all text-left"
         >
-          <div className="bg-green-500 text-white rounded-full p-4 mb-4 group-hover:bg-green-600 transition-colors">
-            <UploadIcon />
+          <div className="flex items-center mb-4">
+            <div className="bg-blue-600 text-white rounded-md p-3">
+              <UploadIcon />
+            </div>
+            <h3 className="ml-4 text-lg font-semibold text-gray-900">ファイルから作成</h3>
           </div>
-          <h3 className="text-xl font-semibold text-slate-800">ファイルから作成</h3>
-          <p className="text-slate-500 mt-2 text-center">音声ファイルやテキストファイルをアップロードして議事録を生成します。</p>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            音声ファイルまたはテキストファイルをアップロードして議事録を生成します。
+          </p>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <span className="text-xs font-medium text-blue-600 group-hover:text-blue-700">機能を開始 →</span>
+          </div>
         </button>
+      </div>
+
+      {/* 過去の議事録ボタン */}
+      <div className="mb-6">
+        <button
+          onClick={onSelectViewPastDocuments}
+          className="w-full p-4 bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-lg hover:border-purple-500 hover:shadow-md transition-all text-left"
+        >
+          <h3 className="text-lg font-semibold text-purple-900 mb-2">📋 過去の議事録を見る</h3>
+          <p className="text-sm text-purple-700">
+            これまでに作成した議事録を確認・編集できます。
+          </p>
+        </button>
+      </div>
+
+      <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <p className="text-sm text-blue-800">
+          <span className="font-semibold">ヒント:</span> リアルタイム文字起こしは会議中に、ファイルアップロードは会議後の記録整理に適しています。
+        </p>
       </div>
     </div>
   );
