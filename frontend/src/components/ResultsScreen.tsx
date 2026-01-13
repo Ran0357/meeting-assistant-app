@@ -109,7 +109,13 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           document_id: documentId,
           description: a.description,
           owner_name: a.owner_name || null,
-          due_date: normalizeDate(a.due_date),
+
+          // ★ 空文字（""）を null に変換する
+          due_date:
+            !a.due_date || a.due_date === "未定"
+              ? null
+              : a.due_date,
+
           reminder_at: a.reminder_at || null,
           last_reminded_at: a.last_reminded_at || null,
           status: a.status || "open",
