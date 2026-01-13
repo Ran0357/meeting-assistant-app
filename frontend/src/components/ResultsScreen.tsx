@@ -92,13 +92,30 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
         await supabase.from('document_participants').upsert(participantRecords);
       }
 
+      const normalizeDate = (value?: string | null): string | null => {
+        if (!value) return null;
+
+        // YYYY-MM-DD だけを許可
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return value;
+        }
+
+        return null; // 自然言語は捨てる
+      };
+
       // actionItems 保存
       if (editableMinutes.actionItems?.length) {
         const todos = editableMinutes.actionItems.map((a) => ({
           document_id: documentId,
           description: a.description,
           owner_name: a.owner_name || null,
-          due_date: a.due_date || null,
+
+          // ★ 空文字（""）を null に変換する
+          due_date:
+            !a.due_date || a.due_date === "未定"
+              ? null
+              : a.due_date,
+
           reminder_at: a.reminder_at || null,
           last_reminded_at: a.last_reminded_at || null,
           status: a.status || "open",

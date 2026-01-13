@@ -10,51 +10,36 @@ interface LiveTranscriptionScreenProps {
   onBack: () => void;
 }
 
-const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({ onMinutesGenerated, onError, onBack }) => {
+/* ===============================
+   Watchdog 設定
+================================ */
+const WATCHDOG_INTERVAL_MS = 1000;
+const WATCHDOG_SILENCE_LIMIT = 5000; // 無音時
+const WATCHDOG_SPEECH_LIMIT = 9000;  // 発話中（緩め）
+
+const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
+  onMinutesGenerated,
+  onError,
+  onBack,
+}) => {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [transcriptHistory, setTranscriptHistory] = useState<string[]>([]);
   const [currentTranscript, setCurrentTranscript] = useState('');
 
   const recognitionRef = useRef<any | null>(null);
-  const lastCommittedTranscriptRef = useRef<string>('');
-  const clearTimeoutRef = useRef<number | null>(null);
-  // Keep a ref for the transcribing state so handlers can access the latest
-  // value without stale closures.
-  const transcribingRef = useRef<boolean>(false);
+  const watchdogRef = useRef<number | null>(null);
 
-  const stopTranscription = useCallback(() => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.onresult = null;
-        recognitionRef.current.onerror = null;
-        recognitionRef.current.onend = null;
-        recognitionRef.current.stop();
-      } catch {}
-      recognitionRef.current = null;
-    }
+  const runningRef = useRef(false);          // 全体ON/OFF
+  const speakingRef = useRef(false);         // 発話中フラグ
+  const lastSoundAtRef = useRef(Date.now()); // 最終音声検知時刻
 
-    if (clearTimeoutRef.current) {
-      clearTimeout(clearTimeoutRef.current);
-      clearTimeoutRef.current = null;
-    }
-    transcribingRef.current = false;
-    setIsTranscribing(false);
-  }, []);
-
-  const startTranscription = useCallback(() => {
-    if (isTranscribing) return;
-    setIsTranscribing(true);
-    setTranscriptHistory([]);
-    setCurrentTranscript('');
-    lastCommittedTranscriptRef.current = '';
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      onError('このブラウザは Web Speech API をサポートしていません。');
-      setIsTranscribing(false);
-      return;
-    }
+  /* ===============================
+     SpeechRecognition 生成
+  =============================== */
+  const createRecognition = useCallback(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'ja-JP';
@@ -62,124 +47,223 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({ onMin
     recognition.continuous = true;
 
     recognition.onresult = (event: any) => {
+      lastSoundAtRef.current = Date.now();
+
       let interim = '';
       let finalText = '';
+
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
+
         if (res.isFinal) {
           finalText += res[0].transcript;
         } else {
           interim += res[0].transcript;
+          speakingRef.current = true; // 発話中
         }
       }
 
       if (finalText.trim()) {
-        const finalTrim = finalText.trim();
-        setTranscriptHistory(prev => {
-          if (prev.length > 0 && prev[prev.length - 1] === finalTrim) return prev;
-          return [...prev, finalTrim];
-        });
-        lastCommittedTranscriptRef.current = finalTrim;
+        setTranscriptHistory(prev => [...prev, finalText.trim()]);
         setCurrentTranscript('');
+        speakingRef.current = false; // 発話確定
       } else {
         setCurrentTranscript(interim);
       }
     };
 
-    recognition.onerror = (e: any) => {
-      console.error('SpeechRecognition error', e);
-      onError(`音声認識エラー: ${e.error || e.message || '不明なエラー'}`);
-      stopTranscription();
-    };
-
     recognition.onend = () => {
-      // The Web Speech API sometimes stops after a few final results.
-      // If the user is still in transcribing mode, restart recognition to
-      // provide continuous listening.
       recognitionRef.current = null;
-      if (transcribingRef.current) {
-        try {
-          // slight delay helps avoid quick stop/start thrash
-          setTimeout(() => {
-            try { recognition.start(); recognitionRef.current = recognition; } catch (e) { console.warn('restart failed', e); }
-          }, 200);
-        } catch (e) {
-          console.warn('failed to restart recognition', e);
-          transcribingRef.current = false;
-          setIsTranscribing(false);
-        }
-      } else {
-        setIsTranscribing(false);
+      speakingRef.current = false;
+
+      if (runningRef.current) {
+        setTimeout(startRecognitionLoop, 200);
       }
     };
 
-    try {
-      recognition.start();
-      recognitionRef.current = recognition;
-      transcribingRef.current = true;
-    } catch (e) {
-      onError('音声認識を開始できませんでした。マイクの許可を確認してください。');
-      transcribingRef.current = false;
-      setIsTranscribing(false);
-    }
-  }, [isTranscribing, onError, stopTranscription]);
+    recognition.onerror = (e: any) => {
+      console.warn('SpeechRecognition error', e);
+      recognitionRef.current = null;
+      speakingRef.current = false;
 
+      if (runningRef.current) {
+        setTimeout(startRecognitionLoop, 300);
+      }
+    };
+
+    return recognition;
+  }, []);
+
+  /* ===============================
+     認識ループ
+  =============================== */
+  const startRecognitionLoop = useCallback(() => {
+    if (!runningRef.current) return;
+
+    try {
+      const recognition = createRecognition();
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e) {
+      console.warn('recognition.start failed', e);
+    }
+  }, [createRecognition]);
+
+  /* ===============================
+     Watchdog（ゾンビ対策）
+  =============================== */
+  const startWatchdog = useCallback(() => {
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+    }
+
+    watchdogRef.current = window.setInterval(() => {
+      if (!runningRef.current) return;
+
+      const diff = Date.now() - lastSoundAtRef.current;
+      const limit = speakingRef.current
+        ? WATCHDOG_SPEECH_LIMIT
+        : WATCHDOG_SILENCE_LIMIT;
+
+      if (diff > limit) {
+        console.warn('watchdog: force restart');
+
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.onend = null;
+            recognitionRef.current.onerror = null;
+            recognitionRef.current.stop();
+          } catch {}
+          recognitionRef.current = null;
+        }
+
+        speakingRef.current = false;
+        lastSoundAtRef.current = Date.now();
+        startRecognitionLoop();
+      }
+    }, WATCHDOG_INTERVAL_MS);
+  }, [startRecognitionLoop]);
+
+  /* ===============================
+     開始
+  =============================== */
+  const startTranscription = useCallback(() => {
+    if (runningRef.current) return;
+
+    setTranscriptHistory([]);
+    setCurrentTranscript('');
+    setIsTranscribing(true);
+
+    runningRef.current = true;
+    speakingRef.current = false;
+    lastSoundAtRef.current = Date.now();
+
+    startWatchdog();
+    startRecognitionLoop();
+  }, [startRecognitionLoop, startWatchdog]);
+
+  /* ===============================
+     停止
+  =============================== */
+  const stopTranscription = useCallback(() => {
+    runningRef.current = false;
+    speakingRef.current = false;
+    setIsTranscribing(false);
+
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null;
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  /* ===============================
+     議事録生成
+  =============================== */
   const handleGenerateMinutes = async () => {
     setIsLoading(true);
-    const fullTranscript = [...transcriptHistory, currentTranscript].join(' ').trim();
+
+    const fullTranscript = [...transcriptHistory, currentTranscript]
+      .join(' ')
+      .trim();
+
     if (!fullTranscript) {
       onError('議事録を生成するための文字起こしがありません。');
       setIsLoading(false);
       return;
     }
+
     try {
-      const minutes = await generateMinutesFromText(fullTranscript);
+      const generated = await generateMinutesFromText(fullTranscript);
+
+      const minutes: MeetingMinutes = {
+        title: '会議議事録',
+        meeting_date: new Date().toISOString().slice(0, 10),
+        ...generated,
+      };
+
       onMinutesGenerated(minutes);
-    } catch (error) {
-      if (error instanceof Error) {
-        onError(error.message);
-      } else {
-        onError('不明なエラーが発生しました。');
-      }
+    } catch (e: any) {
+      onError(e?.message || '不明なエラーが発生しました。');
     } finally {
       setIsLoading(false);
     }
   };
 
+  /* ===============================
+     unmount cleanup
+  =============================== */
   useEffect(() => {
-    return () => {
-      stopTranscription();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => stopTranscription();
+  }, [stopTranscription]);
 
+  /* ===============================
+     UI
+  =============================== */
   return (
     <div className="w-full flex flex-col items-center">
-      <h2 className="text-2xl font-bold text-center mb-4">リアルタイム文字起こし</h2>
-      <div className="w-full h-64 bg-slate-100 rounded-lg p-4 overflow-y-auto mb-6 border border-slate-200">
-        {transcriptHistory.map((line, index) => (
-          <p key={index} className="text-slate-600">{line}</p>
+      <h2 className="text-2xl font-bold mb-4">リアルタイム文字起こし</h2>
+
+      <div className="w-full h-64 bg-slate-100 rounded-lg p-4 overflow-y-auto mb-6 border">
+        {transcriptHistory.map((line, i) => (
+          <p key={i} className="text-slate-600">{line}</p>
         ))}
         <p className="text-slate-800 font-medium">{currentTranscript}</p>
       </div>
 
       <div className="flex items-center space-x-4">
-        <button onClick={onBack} className="p-3 bg-slate-200 rounded-full hover:bg-slate-300 transition-colors" aria-label="戻る">
+        <button onClick={onBack} className="p-3 bg-slate-200 rounded-full">
           <BackIcon />
         </button>
+
         {!isTranscribing ? (
-          <button onClick={startTranscription} disabled={isLoading} className="flex items-center justify-center w-40 h-16 bg-blue-500 text-white rounded-full text-lg font-semibold shadow-lg hover:bg-blue-600 transition-transform transform hover:scale-105 disabled:bg-slate-400">
-            <MicIcon className="mr-2" />
-            <span>開始</span>
+          <button
+            onClick={startTranscription}
+            className="w-40 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center"
+          >
+            <MicIcon className="mr-2" /> 開始
           </button>
         ) : (
-          <button onClick={stopTranscription} disabled={isLoading} className="flex items-center justify-center w-40 h-16 bg-red-500 text-white rounded-full text-lg font-semibold shadow-lg hover:bg-red-600 transition-transform transform hover:scale-105 disabled:bg-slate-400">
-            <StopIcon className="mr-2"/>
-            <span>停止</span>
+          <button
+            onClick={stopTranscription}
+            className="w-40 h-16 bg-red-500 text-white rounded-full flex items-center justify-center"
+          >
+            <StopIcon className="mr-2" /> 停止
           </button>
         )}
-        <button onClick={handleGenerateMinutes} disabled={isTranscribing || isLoading} className="h-16 px-6 bg-green-500 text-white rounded-full text-lg font-semibold shadow-lg hover:bg-green-600 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors flex items-center">
-          {isLoading ? <><Spinner /> <span className="ml-2">生成中...</span></> : '議事録を生成'}
+
+        <button
+          onClick={handleGenerateMinutes}
+          disabled={isTranscribing || isLoading}
+          className="h-16 px-6 bg-green-500 text-white rounded-full"
+        >
+          {isLoading ? <><Spinner /> 生成中…</> : '議事録を生成'}
         </button>
       </div>
     </div>
