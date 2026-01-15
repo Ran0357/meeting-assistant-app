@@ -1,4 +1,4 @@
-export type AppState = 'SELECT' | 'LIVE' | 'UPLOAD' | 'RESULTS';
+export type AppState = 'SELECT' | 'LIVE' | 'UPLOAD' | 'RESULTS' | 'PAST_DOCUMENTS';
 
 /* ───────────────────────────────
  * ActionItem = document_todos

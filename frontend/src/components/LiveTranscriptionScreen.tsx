@@ -34,6 +34,7 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
   const speakingRef = useRef(false);         // 発話中フラグ
   const lastSoundAtRef = useRef(Date.now()); // 最終音声検知時刻
 
+
   /* ===============================
      SpeechRecognition 生成
   =============================== */
@@ -223,8 +224,9 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
     return () => stopTranscription();
   }, [stopTranscription]);
 
+
   /* ===============================
-     UI
+     UI - メイン画面
   =============================== */
   return (
     <div className="w-full flex flex-col items-center">
@@ -238,21 +240,21 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
       </div>
 
       <div className="flex items-center space-x-4">
-        <button onClick={onBack} className="p-3 bg-slate-200 rounded-full">
+        <button onClick={onBack} className="p-3 bg-slate-200 rounded-full hover:bg-slate-300 transition-colors">
           <BackIcon />
         </button>
 
         {!isTranscribing ? (
           <button
             onClick={startTranscription}
-            className="w-40 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center"
+            className="w-40 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 transition-colors"
           >
             <MicIcon className="mr-2" /> 開始
           </button>
         ) : (
           <button
             onClick={stopTranscription}
-            className="w-40 h-16 bg-red-500 text-white rounded-full flex items-center justify-center"
+            className="w-40 h-16 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
           >
             <StopIcon className="mr-2" /> 停止
           </button>
@@ -261,7 +263,7 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
         <button
           onClick={handleGenerateMinutes}
           disabled={isTranscribing || isLoading}
-          className="h-16 px-6 bg-green-500 text-white rounded-full"
+          className="h-16 px-6 bg-green-500 text-white rounded-full hover:bg-green-600 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? <><Spinner /> 生成中…</> : '議事録を生成'}
         </button>

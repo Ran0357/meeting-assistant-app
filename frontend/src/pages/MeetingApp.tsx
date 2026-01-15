@@ -5,6 +5,7 @@ import SelectionScreen from '../components/SelectionScreen';
 import LiveTranscriptionScreen from '../components/LiveTranscriptionScreen';
 import UploadScreen from '../components/UploadScreen';
 import ResultsScreen from '../components/ResultsScreen';
+import PastDocumentsScreen from '../components/PastDocumentsScreen';
 import { GithubIcon } from '../components/Icons';
 
 const MeetingApp: React.FC = () => {
@@ -52,12 +53,17 @@ const MeetingApp: React.FC = () => {
   const renderContent = () => {
     if (error) {
       return (
-        <div className="text-center p-8 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-          <h2 className="text-2xl font-bold mb-4">エラーが発生しました</h2>
-          <p className="mb-6">{error}</p>
+        <div className="text-center p-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">エラーが発生しました</h3>
+          <p className="text-sm text-gray-600 mb-6">{error}</p>
           <button
             onClick={handleReset}
-            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors"
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
           >
             最初に戻る
           </button>
@@ -71,6 +77,7 @@ const MeetingApp: React.FC = () => {
           <SelectionScreen
             onSelectLive={() => setAppState('LIVE')}
             onSelectUpload={() => setAppState('UPLOAD')}
+            onSelectViewPastDocuments={() => setAppState('PAST_DOCUMENTS')}
           />
         );
       case 'LIVE':
@@ -89,6 +96,16 @@ const MeetingApp: React.FC = () => {
             onBack={handleBack}
           />
         );
+      case 'PAST_DOCUMENTS':
+        return (
+          <PastDocumentsScreen
+            onBack={handleBack}
+            onSelectDocument={(doc) => {
+              setMinutes(doc);
+              setAppState('RESULTS');
+            }}
+          />
+        );
       case 'RESULTS':
         return minutes ? <ResultsScreen minutes={minutes} onReset={handleReset} /> : null;
       default:
@@ -97,42 +114,70 @@ const MeetingApp: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 bg-slate-100 font-sans">
-      <div className="w-full max-w-4xl mx-auto">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-800 tracking-tight">
-            会議アシスタント
-          </h1>
-          <p className="mt-2 text-lg text-slate-600">
-            Gemini APIによる議事録作成を体験
-          </p>
-          <div className="absolute top-4 right-4">
-          <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-            >
-              ログアウト
-            </button>
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      {/* ヘッダーバー */}
+      <header className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <h1 className="text-xl font-semibold text-gray-900">
+                会議アシスタントシステム
+              </h1>
+              <span className="ml-4 px-3 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                Gemini API
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-600">
+                {new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                ログアウト
+              </button>
+            </div>
           </div>
-        </header>
-        <main className="bg-white rounded-2xl shadow-2xl p-6 sm:p-10 min-h-[400px] flex items-center justify-center">
-          {renderContent()}
-        </main>
-        <footer className="text-center mt-8 text-slate-500">
-          <p>Powered by Google Gemini API</p>
-          <a
-            href="https://github.com/google/genai-js"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 hover:text-slate-800 transition-colors"
-          >
-            <GithubIcon />
-            View on GitHub
-          </a>
-        </footer>
-      </div>
+        </div>
+      </header>
+
+      {/* メインコンテンツ */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-white rounded-lg shadow border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-medium text-gray-900">
+              {appState === 'SELECT' && '機能選択'}
+              {appState === 'LIVE' && 'リアルタイム文字起こし'}
+              {appState === 'UPLOAD' && 'ファイルアップロード'}
+              {appState === 'PAST_DOCUMENTS' && '過去の議事録'}
+              {appState === 'RESULTS' && '議事録結果'}
+            </h2>
+          </div>
+          <div className="p-6 min-h-[500px]">
+            {renderContent()}
+          </div>
+        </div>
+      </main>
+
+      {/* フッター */}
+      <footer className="bg-white border-t border-gray-200 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center text-sm text-gray-500">
+            <p>© 2026 会議アシスタントシステム. All rights reserved.</p>
+            <a
+              href="https://github.com/google/genai-js"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 hover:text-gray-700 transition-colors"
+            >
+              <GithubIcon />
+              GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
-    
   );
 };
 

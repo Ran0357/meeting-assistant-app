@@ -1,5 +1,5 @@
 from config import Config
-from flask import Flask
+from flask import Flask, jsonify, g
 from flask.wrappers import Response as ResponseBase
 from flask_cors import CORS
 from routes_auth import bp_auth
