@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g
-from src.services.gemini_service import generate_minutes_from_text
+from .services.gemini_service import generate_minutes_from_text
 
 bp_minutes = Blueprint("minutes", __name__, url_prefix="/api")
 

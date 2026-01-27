@@ -1,10 +1,10 @@
-from src.config import Config
+from .config import Config
 from flask import Flask, jsonify, g
 from flask.wrappers import Response as ResponseBase
 from flask_cors import CORS
-from src.routes_auth import bp_auth
-from src.supabase_auth_filter import auth_filter
-from src.routes_minutes import bp_minutes
+from .routes_auth import bp_auth
+from .supabase_auth_filter import auth_filter
+from .routes_minutes import bp_minutes
 
 # Flaskアプリケーション初期化
 app = Flask(__name__, static_folder="static", static_url_path="")

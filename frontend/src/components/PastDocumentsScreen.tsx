@@ -10,11 +10,11 @@ interface PastDocumentsScreenProps {
 }
 
 interface PastDocument {
-  id: string;
+  id?: string;
   title: string;
   meeting_date: string;
   summary: string;
-  created_at: string;
+  created_at?: string;
 }
 
 const PastDocumentsScreen: React.FC<PastDocumentsScreenProps> = ({ onBack, onSelectDocument }) => {

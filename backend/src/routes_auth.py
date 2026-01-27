@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from flask import Blueprint, jsonify, request, Response, redirect, g
-from src.supabase_auth_service import SupabaseAuthService
+from .supabase_auth_service import SupabaseAuthService
 import logging
 from supabase import create_client
 
@@ -82,7 +82,7 @@ def get_documents() -> Response:
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
-        from config import Config
+        from .config import Config
         
         supabase = create_client(
             Config.SUPABASE_URL,
@@ -111,7 +111,7 @@ def get_document_detail(document_id: str) -> Response:
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
-        from config import Config
+        from .config import Config
         
         supabase = create_client(
             Config.SUPABASE_URL,

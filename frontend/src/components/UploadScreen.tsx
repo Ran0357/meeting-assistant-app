@@ -39,11 +39,12 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onMinutesGenerated, onError
       onError('ファイルが選択されていないか、内容が空です。');
       return;
     }
+    const token = localStorage.getItem('access_token') || '';
 
     setIsLoading(true);
     try {
       // Gemini APIなどで議事録生成
-      const generatedMinutes = await generateMinutes(fileContent);
+      const generatedMinutes = await generateMinutes(fileContent, token);
 
       // DB保存前の初期値
       const minutes: MeetingMinutes = {

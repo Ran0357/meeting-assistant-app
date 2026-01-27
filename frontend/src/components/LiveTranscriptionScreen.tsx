@@ -209,6 +209,8 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
   const handleGenerateMinutes = async () => {
     setIsLoading(true);
 
+    const token = localStorage.getItem('access_token') || '';
+
     const fullTranscript = [...transcriptHistory, bufferRef.current]
       .join(' ')
       .trim();
@@ -218,9 +220,9 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
       setIsLoading(false);
       return;
     }
-
+    
     try {
-      const generated = await generateMinutes(fullTranscript);
+      const generated = await generateMinutes(fullTranscript,token);
 
       const minutes: MeetingMinutes = {
         title: '会議議事録',
