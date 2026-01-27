@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MeetingMinutes } from '../types';
-import { generateMinutesFromText } from '../services/geminiService';
+import { generateMinutes } from '../api/minutes';
 import { Spinner } from './Spinner';
 import { MicIcon, StopIcon, BackIcon } from './Icons';
 
@@ -220,7 +220,7 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
     }
 
     try {
-      const generated = await generateMinutesFromText(fullTranscript);
+      const generated = await generateMinutes(fullTranscript);
 
       const minutes: MeetingMinutes = {
         title: '会議議事録',

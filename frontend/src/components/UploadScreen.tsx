@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { MeetingMinutes } from '../types';
-import { generateMinutesFromText } from '../services/geminiService';
+import { generateMinutes } from '../api/minutes';
 import { Spinner } from './Spinner';
 import { UploadIcon, BackIcon } from './Icons';
 
@@ -43,7 +43,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onMinutesGenerated, onError
     setIsLoading(true);
     try {
       // Gemini APIなどで議事録生成
-      const generatedMinutes = await generateMinutesFromText(fileContent);
+      const generatedMinutes = await generateMinutes(fileContent);
 
       // DB保存前の初期値
       const minutes: MeetingMinutes = {

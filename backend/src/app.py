@@ -4,6 +4,7 @@ from flask.wrappers import Response as ResponseBase
 from flask_cors import CORS
 from src.routes_auth import bp_auth
 from src.supabase_auth_filter import auth_filter
+from src.routes_minutes import bp_minutes
 
 # Flaskアプリケーション初期化
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -16,6 +17,8 @@ CORS(
 )
 app.register_blueprint(bp_auth)
 app.before_request(auth_filter)
+app.register_blueprint(bp_minutes)
+
 
 @app.route("/api/protected")
 def protected():
