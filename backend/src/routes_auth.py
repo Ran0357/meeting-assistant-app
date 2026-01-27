@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from flask import Blueprint, jsonify, request, Response, redirect, g
-from supabase_auth_service import SupabaseAuthService
+from src.supabase_auth_service import SupabaseAuthService
 import logging
 from supabase import create_client
 

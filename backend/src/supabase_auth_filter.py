@@ -1,6 +1,6 @@
 from flask import request, jsonify, g
 from fnmatch import fnmatch
-from supabase_auth_service import SupabaseAuthService
+from src.supabase_auth_service import SupabaseAuthService
 
 supabase_auth_service = SupabaseAuthService()
 

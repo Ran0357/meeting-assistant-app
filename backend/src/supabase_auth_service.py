@@ -1,4 +1,4 @@
-from config import Config
+from src.config import Config
 import requests
 from typing import Dict, Any, Tuple
 
