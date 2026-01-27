@@ -1,5 +1,5 @@
 export async function generateMinutes(transcript: string, token: string) {
-  const baseUrl = process.env.VITE_API_BASE_URL || "";
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
   const res = await fetch(`${baseUrl}/api/generate_minutes`, {
     method: "POST",
     headers: {
