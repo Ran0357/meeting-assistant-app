@@ -17,6 +17,6 @@ SQLAlchemy==2.0.30
 # MySQL/TiDB用Pythonドライバ
 PyMySQL==1.1.0
 # Supabase Python Client
-supabase==2.4.0
+supabase>=2.5.0
 
 google-genai==1.60.0
