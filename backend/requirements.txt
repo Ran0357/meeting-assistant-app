@@ -19,4 +19,4 @@ PyMySQL==1.1.0
 # Supabase Python Client
 supabase==2.4.0
 
-google-genai
+google-genai==0.14.1
