@@ -17,6 +17,7 @@ dist-ssr
 node_modules/
 
 __pycache__/
+*.pyc
 
 # Editor directories and files
 .vscode/*

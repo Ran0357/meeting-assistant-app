@@ -11,11 +11,12 @@ interface LiveTranscriptionScreenProps {
 }
 
 /* ===============================
-   Watchdog 設定
+   安定化パラメータ
 ================================ */
 const WATCHDOG_INTERVAL_MS = 1000;
-const WATCHDOG_SILENCE_LIMIT = 5000; // 無音時
-const WATCHDOG_SPEECH_LIMIT = 9000;  // 発話中（緩め）
+const WATCHDOG_SILENCE_LIMIT = 15000;
+const WATCHDOG_SPEECH_LIMIT = 25000;
+const SILENCE_COMMIT_MS = 900;
 
 const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
   onMinutesGenerated,
@@ -29,14 +30,18 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
 
   const recognitionRef = useRef<any | null>(null);
   const watchdogRef = useRef<number | null>(null);
+  const silenceTimerRef = useRef<number | null>(null);
 
-  const runningRef = useRef(false);          // 全体ON/OFF
-  const speakingRef = useRef(false);         // 発話中フラグ
-  const lastSoundAtRef = useRef(Date.now()); // 最終音声検知時刻
+  const runningRef = useRef(false);
+  const startingRef = useRef(false);
+  const stoppingRef = useRef(false);
+  const speakingRef = useRef(false);
+  const lastSoundAtRef = useRef(Date.now());
 
+  const bufferRef = useRef('');
 
   /* ===============================
-     SpeechRecognition 生成
+     Recognition生成
   =============================== */
   const createRecognition = useCallback(() => {
     const SpeechRecognition =
@@ -49,57 +54,62 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
 
     recognition.onresult = (event: any) => {
       lastSoundAtRef.current = Date.now();
+      speakingRef.current = true;
 
       let interim = '';
       let finalText = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
+        if (res.isFinal) finalText += res[0].transcript;
+        else interim += res[0].transcript;
+      }
 
-        if (res.isFinal) {
-          finalText += res[0].transcript;
-        } else {
-          interim += res[0].transcript;
-          speakingRef.current = true; // 発話中
+      if (finalText) bufferRef.current += finalText;
+
+      setCurrentTranscript(bufferRef.current + interim);
+
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+      silenceTimerRef.current = window.setTimeout(() => {
+        if (bufferRef.current.trim()) {
+          setTranscriptHistory(prev => [...prev, bufferRef.current.trim()]);
+          bufferRef.current = '';
+          setCurrentTranscript('');
         }
-      }
-
-      if (finalText.trim()) {
-        setTranscriptHistory(prev => [...prev, finalText.trim()]);
-        setCurrentTranscript('');
-        speakingRef.current = false; // 発話確定
-      } else {
-        setCurrentTranscript(interim);
-      }
+        speakingRef.current = false;
+      }, SILENCE_COMMIT_MS);
     };
 
     recognition.onend = () => {
       recognitionRef.current = null;
       speakingRef.current = false;
 
-      if (runningRef.current) {
-        setTimeout(startRecognitionLoop, 200);
-      }
+      if (!runningRef.current || stoppingRef.current) return;
+
+      setTimeout(() => startRecognitionLoop(), 700);
     };
 
-    recognition.onerror = (e: any) => {
-      console.warn('SpeechRecognition error', e);
+    recognition.onerror = () => {
       recognitionRef.current = null;
       speakingRef.current = false;
 
-      if (runningRef.current) {
-        setTimeout(startRecognitionLoop, 300);
-      }
+      if (!runningRef.current || stoppingRef.current) return;
+
+      setTimeout(() => startRecognitionLoop(), 1000);
     };
 
     return recognition;
   }, []);
 
   /* ===============================
-     認識ループ
+     Recognition Loop
   =============================== */
   const startRecognitionLoop = useCallback(() => {
     if (!runningRef.current) return;
+    if (startingRef.current) return;
+
+    startingRef.current = true;
 
     try {
       const recognition = createRecognition();
@@ -107,16 +117,18 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
       recognition.start();
     } catch (e) {
       console.warn('recognition.start failed', e);
+    } finally {
+      setTimeout(() => {
+        startingRef.current = false;
+      }, 600);
     }
   }, [createRecognition]);
 
   /* ===============================
-     Watchdog（ゾンビ対策）
+     Watchdog
   =============================== */
   const startWatchdog = useCallback(() => {
-    if (watchdogRef.current) {
-      clearInterval(watchdogRef.current);
-    }
+    if (watchdogRef.current) clearInterval(watchdogRef.current);
 
     watchdogRef.current = window.setInterval(() => {
       if (!runningRef.current) return;
@@ -127,61 +139,68 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
         : WATCHDOG_SILENCE_LIMIT;
 
       if (diff > limit) {
-        console.warn('watchdog: force restart');
+        try {
+          recognitionRef.current?.stop();
+        } catch {}
 
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.onend = null;
-            recognitionRef.current.onerror = null;
-            recognitionRef.current.stop();
-          } catch {}
-          recognitionRef.current = null;
-        }
-
+        recognitionRef.current = null;
         speakingRef.current = false;
         lastSoundAtRef.current = Date.now();
+
         startRecognitionLoop();
       }
     }, WATCHDOG_INTERVAL_MS);
   }, [startRecognitionLoop]);
 
   /* ===============================
-     開始
+     Start
   =============================== */
   const startTranscription = useCallback(() => {
     if (runningRef.current) return;
 
+    runningRef.current = true;
+    stoppingRef.current = false;
+    speakingRef.current = false;
+    lastSoundAtRef.current = Date.now();
+    bufferRef.current = '';
+
     setTranscriptHistory([]);
     setCurrentTranscript('');
     setIsTranscribing(true);
-
-    runningRef.current = true;
-    speakingRef.current = false;
-    lastSoundAtRef.current = Date.now();
 
     startWatchdog();
     startRecognitionLoop();
   }, [startRecognitionLoop, startWatchdog]);
 
   /* ===============================
-     停止
+     Stop
   =============================== */
   const stopTranscription = useCallback(() => {
+    stoppingRef.current = true;
     runningRef.current = false;
     speakingRef.current = false;
+
     setIsTranscribing(false);
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
 
     if (watchdogRef.current) {
       clearInterval(watchdogRef.current);
       watchdogRef.current = null;
     }
 
-    if (recognitionRef.current) {
-      recognitionRef.current.onend = null;
-      recognitionRef.current.onerror = null;
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
+    try {
+      recognitionRef.current?.stop();
+    } catch {}
+
+    recognitionRef.current = null;
+
+    setTimeout(() => {
+      stoppingRef.current = false;
+    }, 1000);
   }, []);
 
   /* ===============================
@@ -190,12 +209,12 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
   const handleGenerateMinutes = async () => {
     setIsLoading(true);
 
-    const fullTranscript = [...transcriptHistory, currentTranscript]
+    const fullTranscript = [...transcriptHistory, bufferRef.current]
       .join(' ')
       .trim();
 
     if (!fullTranscript) {
-      onError('議事録を生成するための文字起こしがありません。');
+      onError('文字起こしがありません。');
       setIsLoading(false);
       return;
     }
@@ -217,16 +236,12 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
     }
   };
 
-  /* ===============================
-     unmount cleanup
-  =============================== */
   useEffect(() => {
     return () => stopTranscription();
   }, [stopTranscription]);
 
-
   /* ===============================
-     UI - メイン画面
+     UI
   =============================== */
   return (
     <div className="w-full flex flex-col items-center">
@@ -239,23 +254,25 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
         <p className="text-slate-800 font-medium">{currentTranscript}</p>
       </div>
 
+      <p className="text-sm text-slate-500 mb-3">
+        {isTranscribing ? '🎤 マイク入力中...' : '⏹ 停止中'}
+      </p>
+
       <div className="flex items-center space-x-4">
-        <button onClick={onBack} className="p-3 bg-slate-200 rounded-full hover:bg-slate-300 transition-colors">
+        <button onClick={onBack} className="p-3 bg-slate-200 rounded-full hover:bg-slate-300">
           <BackIcon />
         </button>
 
         {!isTranscribing ? (
           <button
             onClick={startTranscription}
-            className="w-40 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 transition-colors"
-          >
+            className="w-40 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600">
             <MicIcon className="mr-2" /> 開始
           </button>
         ) : (
           <button
             onClick={stopTranscription}
-            className="w-40 h-16 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
-          >
+            className="w-40 h-16 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600">
             <StopIcon className="mr-2" /> 停止
           </button>
         )}
@@ -263,8 +280,7 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
         <button
           onClick={handleGenerateMinutes}
           disabled={isTranscribing || isLoading}
-          className="h-16 px-6 bg-green-500 text-white rounded-full hover:bg-green-600 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
-        >
+          className="h-16 px-6 bg-green-500 text-white rounded-full hover:bg-green-600 disabled:bg-slate-400">
           {isLoading ? <><Spinner /> 生成中…</> : '議事録を生成'}
         </button>
       </div>
