@@ -11,13 +11,15 @@ supabase = create_client(
 )
 
 
+# -----------------------------
 # 議事録生成
+# -----------------------------
 @bp_minutes.route("/generate_minutes", methods=["POST"])
 def generate_minutes():
     if not getattr(g, "user_id", None):
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json() or {}
+    data = request.get_json()
     transcript = data.get("transcript", "")
 
     if not transcript:
@@ -27,23 +29,48 @@ def generate_minutes():
     return jsonify(result), 200
 
 
-# 議事録保存
+# -----------------------------
+# 議事録 保存 / 更新
+# -----------------------------
 @bp_minutes.route("/save_minutes", methods=["POST"])
 def save_minutes():
     if not getattr(g, "user_id", None):
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json() or {}
+    data = request.get_json()
+    document_id = data.get("id")
 
-    doc_res = supabase.table("documents").insert({
-        "user_id": g.user_id,
-        "title": data.get("title"),
-        "summary": data.get("summary"),
-        "key_points": data.get("key_points"),
-        "meeting_date": data.get("meeting_date"),
-    }).execute()
+    # ---------- documents ----------
+    if document_id:
+        # 既存議事録 → 更新
+        supabase.table("documents") \
+            .update({
+                "title": data.get("title"),
+                "summary": data.get("summary"),
+                "key_points": data.get("key_points"),
+                "meeting_date": data.get("meeting_date"),
+            }) \
+            .eq("id", document_id) \
+            .eq("user_id", g.user_id) \
+            .execute()
+    else:
+        # 新規作成
+        doc_res = supabase.table("documents").insert({
+            "user_id": g.user_id,
+            "title": data.get("title"),
+            "summary": data.get("summary"),
+            "key_points": data.get("key_points"),
+            "meeting_date": data.get("meeting_date"),
+        }).execute()
 
-    document_id = doc_res.data[0]["id"]
+        document_id = doc_res.data[0]["id"]
+
+    # ---------- action items ----------
+    # 既存タスクを一旦削除して再登録（シンプル設計）
+    supabase.table("document_todos") \
+        .delete() \
+        .eq("document_id", document_id) \
+        .execute()
 
     action_items = data.get("actionItems") or []
     todos = []
@@ -63,3 +90,56 @@ def save_minutes():
         supabase.table("document_todos").insert(todos).execute()
 
     return jsonify({"status": "ok", "document_id": document_id}), 200
+
+
+# -----------------------------
+# 議事録一覧取得
+# -----------------------------
+@bp_minutes.route("/documents", methods=["GET"])
+def get_documents():
+    if not getattr(g, "user_id", None):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    res = supabase.table("documents") \
+        .select("id,title,summary,meeting_date,created_at") \
+        .eq("user_id", g.user_id) \
+        .order("created_at", desc=True) \
+        .execute()
+
+    return jsonify({"documents": res.data}), 200
+
+
+# -----------------------------
+# 議事録詳細取得
+# -----------------------------
+@bp_minutes.route("/documents/<document_id>", methods=["GET"])
+def get_document_detail(document_id):
+    if not getattr(g, "user_id", None):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    doc_res = supabase.table("documents") \
+        .select("*") \
+        .eq("id", document_id) \
+        .eq("user_id", g.user_id) \
+        .single() \
+        .execute()
+
+    if not doc_res.data:
+        return jsonify({"error": "Document not found"}), 404
+
+    document = doc_res.data
+
+    participants = supabase.table("document_participants") \
+        .select("*") \
+        .eq("document_id", document_id) \
+        .execute().data
+
+    action_items = supabase.table("document_todos") \
+        .select("*") \
+        .eq("document_id", document_id) \
+        .execute().data
+
+    document["participants"] = participants
+    document["actionItems"] = action_items
+
+    return jsonify(document), 200
