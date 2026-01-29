@@ -13,11 +13,13 @@ const MeetingApp: React.FC = () => {
   const [minutes, setMinutes] = useState<MeetingMinutes | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
   const handleLogout = async () => {
     const token = localStorage.getItem('access_token');
     try {
       if (token) {
-        await fetch('/api/auth/logout', {
+        await fetch(`${API_BASE_URL}/api/auth/logout`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
