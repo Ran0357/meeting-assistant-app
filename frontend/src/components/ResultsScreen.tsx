@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
 import { MeetingMinutes, ActionItem, Participant } from '../types';
-import { SaveIcon, SlackIcon } from './Icons';
+import { SaveIcon } from './Icons';
 
 interface ResultsScreenProps {
   minutes: MeetingMinutes;
   onReset: () => void;
 }
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const EMPTY_ACTION: ActionItem = {
   description: '',
@@ -24,8 +25,6 @@ const EMPTY_ACTION: ActionItem = {
 const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
   const [editableMinutes, setEditableMinutes] = useState<MeetingMinutes>(minutes);
   const [participants, setParticipants] = useState<Participant[]>(minutes.participants || []);
-  const [newParticipantName, setNewParticipantName] = useState('');
-  const [newParticipantRole, setNewParticipantRole] = useState('');
   const [showSaveForm, setShowSaveForm] = useState(false);
 
   useEffect(() => {
@@ -69,51 +68,26 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     if (!editableMinutes.title) return alert('会議名は必須です');
     if (!editableMinutes.meeting_date) return alert('実施日は必須です');
 
-    const validItems = (editableMinutes.actionItems || []).filter(
-      a => a.description && a.description.trim().length > 0
-    );
+    const token = localStorage.getItem('access_token');
+    if (!token) return alert('ログイン情報がありません');
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData?.session?.user?.id;
-      if (!userId) throw new Error('ログイン情報が取得できません');
+      const res = await fetch(`${API_BASE_URL}/api/save_minutes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(editableMinutes),
+      });
 
-      const { data: docData, error: docError } = await supabase
-        .from('documents')
-        .upsert({
-          id: editableMinutes.id,
-          user_id: userId,
-          title: editableMinutes.title,
-          summary: editableMinutes.summary,
-          key_points: editableMinutes.key_points,
-          meeting_date: editableMinutes.meeting_date,
-        })
-        .select()
-        .single();
-
-      if (docError || !docData) throw docError;
-
-      if (validItems.length) {
-        const todos = validItems.map(a => ({
-          document_id: docData.id,
-          description: a.description,
-          owner_name: a.owner_name || null,
-          due_date: a.due_date || null,
-          reminder_at: a.reminder_at || null,
-          last_reminded_at: a.last_reminded_at || null,
-          status: a.status || 'open',
-          slack_channel: a.slack_channel || null,
-          reminded_before: a.reminded_before || false,
-          notify_before: a.notify_before || false,
-          notified_before_at: a.notified_before_at || null,
-        }));
-
-        await supabase.from('document_todos').insert(todos);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
       }
 
       alert('保存完了！');
       setShowSaveForm(false);
-
     } catch (err: any) {
       console.error(err);
       alert(`保存失敗: ${err.message}`);
@@ -124,7 +98,6 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     <div className="w-full flex flex-col items-center">
       <h2 className="text-3xl font-bold mb-6">生成された議事録</h2>
 
-      {/* 要約 */}
       <section className="w-full space-y-6">
         <div>
           <h3 className="font-semibold border-b-2 border-blue-500 pb-1">要約</h3>
@@ -135,7 +108,6 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           />
         </div>
 
-        {/* 決定事項 */}
         <div>
           <h3 className="font-semibold border-b-2 border-green-500 pb-1">主要な決定事項</h3>
           <textarea
@@ -145,16 +117,8 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           />
         </div>
 
-        {/* アクション */}
         <div>
           <h3 className="font-semibold border-b-2 border-yellow-500 pb-1">アクションアイテム</h3>
-
-          {editableMinutes.actionItems?.length === 1 &&
-            !editableMinutes.actionItems[0].description && (
-              <p className="text-sm text-gray-500 mb-2">
-                自動生成されたアクションはありません。必要に応じて追加してください。
-              </p>
-          )}
 
           <div className="space-y-3">
             {editableMinutes.actionItems?.map((item, i) => (
@@ -189,7 +153,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
 
           <button
             onClick={addActionItem}
-            className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+            className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded"
           >
             ＋ 追加
           </button>
