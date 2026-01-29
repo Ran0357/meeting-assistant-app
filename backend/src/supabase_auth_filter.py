@@ -6,6 +6,9 @@ supabase_auth_service = SupabaseAuthService()
 
 # 認証フィルター
 def auth_filter():
+    if request.method == "OPTIONS":
+        return
+        
     excluded_patterns = [
         "/", "/api/auth/*"
     ]
