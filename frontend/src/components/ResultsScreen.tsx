@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MeetingMinutes, ActionItem, Participant } from '../types';
-import { SaveIcon } from './Icons';
+import { SaveIcon, SlackIcon } from './Icons';
 
 interface ResultsScreenProps {
   minutes: MeetingMinutes;
@@ -94,6 +94,42 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     }
   };
 
+  // ===============================
+  // ここから Slack通知
+  // ===============================
+  const handleNotifySlack = async () => {
+    try {
+      const token = localStorage.getItem("access_token");
+      if (!token) throw new Error("ログイン情報がありません");
+
+      const normalizedItems = (editableMinutes.actionItems || []).map(item => ({
+        ...item,
+        due_date: item.due_date || null,
+      }));
+
+      const res = await fetch(`${API_BASE_URL}/functions/v1/slack_reminder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ items: normalizedItems }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
+      }
+
+      alert("Slack通知を送信しました！");
+    } catch (err: any) {
+      console.error(err);
+      alert(`Slack通知失敗: ${err.message}`);
+    }
+  };
+
+  // ===============================
+
   return (
     <div className="w-full flex flex-col items-center">
       <h2 className="text-3xl font-bold mb-6">生成された議事録</h2>
@@ -119,7 +155,6 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
 
         <div>
           <h3 className="font-semibold border-b-2 border-yellow-500 pb-1">アクションアイテム</h3>
-
           <div className="space-y-3">
             {editableMinutes.actionItems?.map((item, i) => (
               <div key={i} className="flex gap-3 p-3 border rounded bg-slate-50">
@@ -150,7 +185,6 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
               </div>
             ))}
           </div>
-
           <button
             onClick={addActionItem}
             className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded"
@@ -166,6 +200,13 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-full"
         >
           <SaveIcon className="mr-2" /> DB保存
+        </button>
+
+        <button
+          onClick={handleNotifySlack}
+          className="flex items-center px-6 py-3 bg-gray-800 text-white rounded-full"
+        >
+          <SlackIcon className="mr-2" /> Slack通知
         </button>
 
         <button
