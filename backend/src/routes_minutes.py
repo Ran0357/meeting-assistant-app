@@ -57,6 +57,13 @@ def save_minutes():
 
     # ---------- action items ----------
     action_items = data.get("actionItems") or []
+
+    # 既存 todo を取得して id リストを作る
+    existing_todos = supabase.table("document_todos")\
+        .select("id").eq("document_id", document_id).execute().data
+    existing_todo_ids = {t["id"] for t in existing_todos}
+
+    sent_todo_ids = set()
     for a in action_items:
         if not a.get("description"):
             continue
@@ -71,11 +78,24 @@ def save_minutes():
         }
         if a.get("id"):
             supabase.table("document_todos").update(todo_data).eq("id", a["id"]).execute()
+            sent_todo_ids.add(a["id"])
         else:
-            supabase.table("document_todos").insert(todo_data).execute()
+            insert_res = supabase.table("document_todos").insert(todo_data).execute()
+            sent_todo_ids.add(insert_res.data[0]["id"])
+
+    # フロントで削除されたものは DB からも削除
+    ids_to_delete = existing_todo_ids - sent_todo_ids
+    if ids_to_delete:
+        supabase.table("document_todos").delete().in_("id", list(ids_to_delete)).execute()
 
     # ---------- participants ----------
     participants = data.get("participants") or []
+
+    existing_participants = supabase.table("document_participants")\
+        .select("id").eq("document_id", document_id).execute().data
+    existing_participant_ids = {p["id"] for p in existing_participants}
+
+    sent_participant_ids = set()
     for p in participants:
         participant_data = {
             "document_id": document_id,
@@ -84,10 +104,17 @@ def save_minutes():
         }
         if p.get("id"):
             supabase.table("document_participants").update(participant_data).eq("id", p["id"]).execute()
+            sent_participant_ids.add(p["id"])
         else:
-            supabase.table("document_participants").insert(participant_data).execute()
+            insert_res = supabase.table("document_participants").insert(participant_data).execute()
+            sent_participant_ids.add(insert_res.data[0]["id"])
+
+    ids_to_delete = existing_participant_ids - sent_participant_ids
+    if ids_to_delete:
+        supabase.table("document_participants").delete().in_("id", list(ids_to_delete)).execute()
 
     return jsonify({"status": "ok", "document_id": document_id}), 200
+
 
 
 # -----------------------------
