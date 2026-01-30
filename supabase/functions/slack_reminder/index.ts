@@ -37,7 +37,7 @@ serve(async (req: Request) => {
 
     // Slack通知
     for (const item of items) {
-      if (!item.description) continue;
+      if (!item.description || !item.due_date) continue;
 
       const text = `📌 *アクションアイテム*\n` +
                    `• 内容：${item.description}\n` +

@@ -8,6 +8,7 @@ interface ResultsScreenProps {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 const EMPTY_ACTION: ActionItem = {
   description: '',
@@ -38,11 +39,18 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     setParticipants(minutes.participants || []);
   }, [minutes]);
 
-  const handleInputChange = <K extends keyof MeetingMinutes>(key: K, value: MeetingMinutes[K]) => {
+  const handleInputChange = <K extends keyof MeetingMinutes>(
+    key: K,
+    value: MeetingMinutes[K]
+  ) => {
     setEditableMinutes(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleActionItemChange = (index: number, field: keyof ActionItem, value: any) => {
+  const handleActionItemChange = (
+    index: number,
+    field: keyof ActionItem,
+    value: any
+  ) => {
     const updated = [...(editableMinutes.actionItems || [])];
     updated[index] = { ...updated[index], [field]: value };
     setEditableMinutes(prev => ({ ...prev, actionItems: updated }));
@@ -64,6 +72,9 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     }));
   };
 
+  // ===============================
+  // DB保存
+  // ===============================
   const handleSave = async () => {
     if (!editableMinutes.title) return alert('会議名は必須です');
     if (!editableMinutes.meeting_date) return alert('実施日は必須です');
@@ -81,10 +92,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
         body: JSON.stringify(editableMinutes),
       });
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text);
-      }
+      if (!res.ok) throw new Error(await res.text());
 
       alert('保存完了！');
       setShowSaveForm(false);
@@ -95,19 +103,19 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
   };
 
   // ===============================
-  // ここから Slack通知
+  // Slack 即日通知 + 前日通知登録
   // ===============================
   const handleNotifySlack = async () => {
     try {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("ログイン情報がありません");
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
       const normalizedItems = (editableMinutes.actionItems || []).map(item => ({
         ...item,
         due_date: item.due_date || null,
       }));
 
+      // ① 即日通知
       const res = await fetch(`${SUPABASE_URL}/functions/v1/slack_reminder`, {
         method: "POST",
         headers: {
@@ -117,12 +125,25 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
         body: JSON.stringify({ items: normalizedItems }),
       });
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text);
+      if (!res.ok) throw new Error(await res.text());
+
+      // ② 前日通知フラグ登録（期限ありのみ）
+      const itemsWithDueDate = normalizedItems
+        .filter(i => i.due_date)
+        .map(i => i.description);
+
+      if (itemsWithDueDate.length > 0) {
+        await fetch(`${API_BASE_URL}/api/mark_notify_before`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ descriptions: itemsWithDueDate }),
+        });
       }
 
-      alert("Slack通知を送信しました！");
+      alert("Slack即日通知 & 前日通知登録 完了！");
     } catch (err: any) {
       console.error(err);
       alert(`Slack通知失敗: ${err.message}`);
@@ -149,13 +170,17 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           <h3 className="font-semibold border-b-2 border-green-500 pb-1">主要な決定事項</h3>
           <textarea
             value={(editableMinutes.key_points || []).join('\n')}
-            onChange={e => handleInputChange('key_points', e.target.value.split('\n'))}
+            onChange={e =>
+              handleInputChange('key_points', e.target.value.split('\n'))
+            }
             className="w-full h-40 p-3 border rounded"
           />
         </div>
 
         <div>
-          <h3 className="font-semibold border-b-2 border-yellow-500 pb-1">アクションアイテム</h3>
+          <h3 className="font-semibold border-b-2 border-yellow-500 pb-1">
+            アクションアイテム
+          </h3>
           <div className="space-y-3">
             {editableMinutes.actionItems?.map((item, i) => (
               <div key={i} className="flex gap-3 p-3 border rounded bg-slate-50">
@@ -163,19 +188,25 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
                   className="flex-[2] p-2 border rounded"
                   placeholder="タスク"
                   value={item.description}
-                  onChange={e => handleActionItemChange(i, 'description', e.target.value)}
+                  onChange={e =>
+                    handleActionItemChange(i, 'description', e.target.value)
+                  }
                 />
                 <input
                   className="flex-1 p-2 border rounded"
                   placeholder="担当者"
                   value={item.owner_name || ''}
-                  onChange={e => handleActionItemChange(i, 'owner_name', e.target.value)}
+                  onChange={e =>
+                    handleActionItemChange(i, 'owner_name', e.target.value)
+                  }
                 />
                 <input
                   type="date"
                   className="flex-1 p-2 border rounded"
                   value={item.due_date || ''}
-                  onChange={e => handleActionItemChange(i, 'due_date', e.target.value || null)}
+                  onChange={e =>
+                    handleActionItemChange(i, 'due_date', e.target.value || null)
+                  }
                 />
                 <button
                   onClick={() => removeActionItem(i)}
@@ -233,15 +264,23 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
             <input
               type="date"
               value={editableMinutes.meeting_date || ''}
-              onChange={e => handleInputChange('meeting_date', e.target.value)}
+              onChange={e =>
+                handleInputChange('meeting_date', e.target.value)
+              }
               className="w-full p-2 border rounded mb-4"
             />
 
             <div className="flex justify-between">
-              <button onClick={() => setShowSaveForm(false)} className="px-4 py-2 bg-gray-300 rounded">
+              <button
+                onClick={() => setShowSaveForm(false)}
+                className="px-4 py-2 bg-gray-300 rounded"
+              >
                 キャンセル
               </button>
-              <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded">
+              <button
+                onClick={handleSave}
+                className="px-4 py-2 bg-blue-600 text-white rounded"
+              >
                 保存
               </button>
             </div>
