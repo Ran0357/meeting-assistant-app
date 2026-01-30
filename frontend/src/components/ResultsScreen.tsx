@@ -123,7 +123,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
 
       if (!res.ok) throw new Error(await res.text());
 
-      alert('保存完了！\n前日通知は自動登録されました');
+      alert('保存完了！\n※ 期限付きタスクは、前日に自動でSlackに通知されます');
       setShowSaveForm(false);
     } catch (err: any) {
       console.error(err);
@@ -245,14 +245,14 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           onClick={() => setShowSaveForm(true)}
           className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-full"
         >
-          <SaveIcon className="mr-2" /> 保存（前日通知登録）
+          <SaveIcon className="mr-2" /> 保存
         </button>
 
         <button
           onClick={handleNotifySlack}
           className="flex items-center px-6 py-3 bg-gray-800 text-white rounded-full"
         >
-          <SlackIcon className="mr-2" /> Slack即日通知
+          <SlackIcon className="mr-2" /> Slackに今すぐ通知
         </button>
 
         <button

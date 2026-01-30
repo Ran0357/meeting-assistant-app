@@ -39,6 +39,7 @@ def save_minutes():
 
     data = request.get_json()
     document_id = data.get("id")
+    user_id = g.user_id
 
     # ---------- documents ----------
     if document_id:
@@ -50,48 +51,85 @@ def save_minutes():
                 "meeting_date": data.get("meeting_date"),
             }) \
             .eq("id", document_id) \
-            .eq("user_id", g.user_id) \
+            .eq("user_id", user_id) \
             .execute()
     else:
         doc_res = supabase.table("documents").insert({
-            "user_id": g.user_id,
+            "user_id": user_id,
             "title": data.get("title"),
             "summary": data.get("summary"),
             "key_points": data.get("key_points"),
             "meeting_date": data.get("meeting_date"),
         }).execute()
-
         document_id = doc_res.data[0]["id"]
 
     # ---------- action items ----------
-    supabase.table("document_todos") \
-        .delete() \
+    action_items = data.get("actionItems") or []
+
+    # 現存 todo ID
+    existing_todos_res = supabase.table("document_todos") \
+        .select("id") \
         .eq("document_id", document_id) \
         .execute()
+    existing_ids = [t["id"] for t in existing_todos_res.data]
 
-    action_items = data.get("actionItems") or []
-    todos = []
+    # フロントから削除されたものを消す
+    incoming_ids = [a.get("id") for a in action_items if a.get("id")]
+    to_delete = list(set(existing_ids) - set(incoming_ids))
+    if to_delete:
+        supabase.table("document_todos").delete().in_("id", to_delete).execute()
 
+    # upsert で追加・更新
+    todos_upsert = []
     for a in action_items:
         if not a.get("description"):
             continue
 
-        due_date = a.get("due_date")
-
-        todos.append({
+        todos_upsert.append({
+            "id": a.get("id"),  # Noneの場合は新規
             "document_id": document_id,
             "description": a.get("description"),
             "owner_name": a.get("owner_name"),
-            "due_date": due_date,
+            "due_date": a.get("due_date"),
             "status": a.get("status", "open"),
-
-            # 期限があるものだけ前日通知ON
-            "notify_before": bool(due_date),
-            "notified_before_at": None
+            "notify_before": bool(a.get("due_date")),
+            "notified_before_at": a.get("notified_before_at"),
+            "reminder_at": a.get("reminder_at"),
+            "last_reminded_at": a.get("last_reminded_at"),
+            "slack_channel": a.get("slack_channel"),
+            "reminded_before": a.get("reminded_before", False)
         })
 
-    if todos:
-        supabase.table("document_todos").insert(todos).execute()
+    if todos_upsert:
+        supabase.table("document_todos").upsert(todos_upsert, on_conflict=["id"]).execute()
+
+    # ---------- participants ----------
+    participants = data.get("participants") or []
+
+    # 現存参加者
+    existing_participants_res = supabase.table("document_participants") \
+        .select("id") \
+        .eq("document_id", document_id) \
+        .execute()
+    existing_participant_ids = [p["id"] for p in existing_participants_res.data]
+
+    incoming_participant_ids = [p.get("id") for p in participants if p.get("id")]
+    to_delete_participants = list(set(existing_participant_ids) - set(incoming_participant_ids))
+    if to_delete_participants:
+        supabase.table("document_participants").delete().in_("id", to_delete_participants).execute()
+
+    participants_upsert = []
+    for p in participants:
+        participants_upsert.append({
+            "id": p.get("id"),
+            "document_id": document_id,
+            "name": p.get("name"),
+            "role": p.get("role"),
+            "slack_id": p.get("slack_id")
+        })
+
+    if participants_upsert:
+        supabase.table("document_participants").upsert(participants_upsert, on_conflict=["id"]).execute()
 
     return jsonify({"status": "ok", "document_id": document_id}), 200
 
