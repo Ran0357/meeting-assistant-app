@@ -42,7 +42,6 @@ def save_minutes():
 
     # ---------- documents ----------
     if document_id:
-        # 既存議事録 → 更新
         supabase.table("documents") \
             .update({
                 "title": data.get("title"),
@@ -54,7 +53,6 @@ def save_minutes():
             .eq("user_id", g.user_id) \
             .execute()
     else:
-        # 新規作成
         doc_res = supabase.table("documents").insert({
             "user_id": g.user_id,
             "title": data.get("title"),
@@ -66,7 +64,6 @@ def save_minutes():
         document_id = doc_res.data[0]["id"]
 
     # ---------- action items ----------
-    # 既存タスクを一旦削除して再登録（シンプル設計）
     supabase.table("document_todos") \
         .delete() \
         .eq("document_id", document_id) \
@@ -78,12 +75,19 @@ def save_minutes():
     for a in action_items:
         if not a.get("description"):
             continue
+
+        due_date = a.get("due_date")
+
         todos.append({
             "document_id": document_id,
             "description": a.get("description"),
             "owner_name": a.get("owner_name"),
-            "due_date": a.get("due_date"),
+            "due_date": due_date,
             "status": a.get("status", "open"),
+
+            # 期限があるものだけ前日通知ON
+            "notify_before": bool(due_date),
+            "notified_before_at": None
         })
 
     if todos:

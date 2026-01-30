@@ -28,6 +28,9 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
   const [participants, setParticipants] = useState<Participant[]>(minutes.participants || []);
   const [showSaveForm, setShowSaveForm] = useState(false);
 
+  const [newParticipantName, setNewParticipantName] = useState('');
+  const [newParticipantRole, setNewParticipantRole] = useState('');
+
   useEffect(() => {
     setEditableMinutes({
       ...minutes,
@@ -73,7 +76,24 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
   };
 
   // ===============================
-  // DB保存
+  // 参加者管理
+  // ===============================
+  const addParticipant = () => {
+    if (!newParticipantName.trim()) return;
+    setParticipants(prev => [
+      ...prev,
+      { name: newParticipantName, role: newParticipantRole || null },
+    ]);
+    setNewParticipantName('');
+    setNewParticipantRole('');
+  };
+
+  const removeParticipant = (index: number) => {
+    setParticipants(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // ===============================
+  // DB保存（← 前日通知はここで自動登録）
   // ===============================
   const handleSave = async () => {
     if (!editableMinutes.title) return alert('会議名は必須です');
@@ -82,6 +102,15 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     const token = localStorage.getItem('access_token');
     if (!token) return alert('ログイン情報がありません');
 
+    const payload: MeetingMinutes = {
+      ...editableMinutes,
+      participants,
+      actionItems: (editableMinutes.actionItems || []).map(i => ({
+        ...i,
+        notify_before: !!i.due_date, // ← 期限ありのみ前日通知ON
+      })),
+    };
+
     try {
       const res = await fetch(`${API_BASE_URL}/api/save_minutes`, {
         method: 'POST',
@@ -89,12 +118,12 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(editableMinutes),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error(await res.text());
 
-      alert('保存完了！');
+      alert('保存完了！\n前日通知は自動登録されました');
       setShowSaveForm(false);
     } catch (err: any) {
       console.error(err);
@@ -103,47 +132,30 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
   };
 
   // ===============================
-  // Slack 即日通知 + 前日通知登録
+  // Slack 即日通知のみ
   // ===============================
   const handleNotifySlack = async () => {
     try {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("ログイン情報がありません");
 
-      const normalizedItems = (editableMinutes.actionItems || []).map(item => ({
-        ...item,
-        due_date: item.due_date || null,
-      }));
+      const items = (editableMinutes.actionItems || [])
+        .filter(i => i.description);
 
-      // ① 即日通知
+      if (!items.length) return alert("通知するタスクがありません");
+
       const res = await fetch(`${SUPABASE_URL}/functions/v1/slack_reminder`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ items: normalizedItems }),
+        body: JSON.stringify({ items }),
       });
 
       if (!res.ok) throw new Error(await res.text());
 
-      // ② 前日通知フラグ登録（期限ありのみ）
-      const itemsWithDueDate = normalizedItems
-        .filter(i => i.due_date)
-        .map(i => i.description);
-
-      if (itemsWithDueDate.length > 0) {
-        await fetch(`${API_BASE_URL}/api/mark_notify_before`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ descriptions: itemsWithDueDate }),
-        });
-      }
-
-      alert("Slack即日通知 & 前日通知登録 完了！");
+      alert("Slack即日通知 完了！");
     } catch (err: any) {
       console.error(err);
       alert(`Slack通知失敗: ${err.message}`);
@@ -181,6 +193,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           <h3 className="font-semibold border-b-2 border-yellow-500 pb-1">
             アクションアイテム
           </h3>
+
           <div className="space-y-3">
             {editableMinutes.actionItems?.map((item, i) => (
               <div key={i} className="flex gap-3 p-3 border rounded bg-slate-50">
@@ -217,6 +230,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
               </div>
             ))}
           </div>
+
           <button
             onClick={addActionItem}
             className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded"
@@ -231,14 +245,14 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
           onClick={() => setShowSaveForm(true)}
           className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-full"
         >
-          <SaveIcon className="mr-2" /> DB保存
+          <SaveIcon className="mr-2" /> 保存（前日通知登録）
         </button>
 
         <button
           onClick={handleNotifySlack}
           className="flex items-center px-6 py-3 bg-gray-800 text-white rounded-full"
         >
-          <SlackIcon className="mr-2" /> Slack通知
+          <SlackIcon className="mr-2" /> Slack即日通知
         </button>
 
         <button
@@ -249,16 +263,17 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
         </button>
       </div>
 
+      {/* 保存モーダル */}
       {showSaveForm && (
-        <div className="fixed inset-0 bg-black/40 flex justify-center items-center">
-          <div className="bg-white p-6 rounded-lg w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">保存情報</h3>
+        <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md space-y-4">
+            <h3 className="text-lg font-semibold">保存情報</h3>
 
             <input
-              placeholder="会議名"
+              placeholder="会議名（必須）"
               value={editableMinutes.title || ''}
               onChange={e => handleInputChange('title', e.target.value)}
-              className="w-full p-2 border rounded mb-2"
+              className="w-full p-2 border rounded"
             />
 
             <input
@@ -267,10 +282,46 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
               onChange={e =>
                 handleInputChange('meeting_date', e.target.value)
               }
-              className="w-full p-2 border rounded mb-4"
+              className="w-full p-2 border rounded"
             />
 
-            <div className="flex justify-between">
+            <div>
+              <label className="text-sm font-medium">参加者</label>
+              {participants.map((p, i) => (
+                <div key={i} className="flex justify-between mt-1">
+                  <span>{p.name} {p.role && `(${p.role})`}</span>
+                  <button
+                    onClick={() => removeParticipant(i)}
+                    className="text-red-500 text-sm"
+                  >
+                    削除
+                  </button>
+                </div>
+              ))}
+
+              <div className="flex gap-1 mt-2">
+                <input
+                  placeholder="名前"
+                  value={newParticipantName}
+                  onChange={e => setNewParticipantName(e.target.value)}
+                  className="flex-1 p-1 border rounded"
+                />
+                <input
+                  placeholder="役割"
+                  value={newParticipantRole}
+                  onChange={e => setNewParticipantRole(e.target.value)}
+                  className="flex-1 p-1 border rounded"
+                />
+                <button
+                  onClick={addParticipant}
+                  className="px-2 bg-green-500 text-white rounded"
+                >
+                  追加
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-between pt-2">
               <button
                 onClick={() => setShowSaveForm(false)}
                 className="px-4 py-2 bg-gray-300 rounded"
