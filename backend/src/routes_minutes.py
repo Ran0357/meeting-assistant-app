@@ -39,97 +39,53 @@ def save_minutes():
 
     data = request.get_json()
     document_id = data.get("id")
-    user_id = g.user_id
 
     # ---------- documents ----------
+    doc_data = {
+        "title": data.get("title"),
+        "summary": data.get("summary"),
+        "key_points": data.get("key_points"),
+        "meeting_date": data.get("meeting_date"),
+    }
+
     if document_id:
-        supabase.table("documents") \
-            .update({
-                "title": data.get("title"),
-                "summary": data.get("summary"),
-                "key_points": data.get("key_points"),
-                "meeting_date": data.get("meeting_date"),
-            }) \
-            .eq("id", document_id) \
-            .eq("user_id", user_id) \
-            .execute()
+        supabase.table("documents").update(doc_data)\
+            .eq("id", document_id).eq("user_id", g.user_id).execute()
     else:
-        doc_res = supabase.table("documents").insert({
-            "user_id": user_id,
-            "title": data.get("title"),
-            "summary": data.get("summary"),
-            "key_points": data.get("key_points"),
-            "meeting_date": data.get("meeting_date"),
-        }).execute()
+        doc_res = supabase.table("documents").insert({**doc_data, "user_id": g.user_id}).execute()
         document_id = doc_res.data[0]["id"]
 
     # ---------- action items ----------
     action_items = data.get("actionItems") or []
-
-    # 現存 todo ID
-    existing_todos_res = supabase.table("document_todos") \
-        .select("id") \
-        .eq("document_id", document_id) \
-        .execute()
-    existing_ids = [t["id"] for t in existing_todos_res.data]
-
-    # フロントから削除されたものを消す
-    incoming_ids = [a.get("id") for a in action_items if a.get("id")]
-    to_delete = list(set(existing_ids) - set(incoming_ids))
-    if to_delete:
-        supabase.table("document_todos").delete().in_("id", to_delete).execute()
-
-    # upsert で追加・更新
-    todos_upsert = []
     for a in action_items:
         if not a.get("description"):
             continue
-
-        todos_upsert.append({
-            "id": a.get("id"),  # Noneの場合は新規
+        todo_data = {
             "document_id": document_id,
             "description": a.get("description"),
-            "owner_name": a.get("owner_name"),
-            "due_date": a.get("due_date"),
+            "owner_name": a.get("owner_name") or None,
+            "due_date": a.get("due_date") or None,
             "status": a.get("status", "open"),
             "notify_before": bool(a.get("due_date")),
-            "notified_before_at": a.get("notified_before_at"),
-            "reminder_at": a.get("reminder_at"),
-            "last_reminded_at": a.get("last_reminded_at"),
-            "slack_channel": a.get("slack_channel"),
-            "reminded_before": a.get("reminded_before", False)
-        })
-
-    if todos_upsert:
-        supabase.table("document_todos").upsert(todos_upsert, on_conflict=["id"]).execute()
+            "notified_before_at": a.get("notified_before_at") or None
+        }
+        if a.get("id"):
+            supabase.table("document_todos").update(todo_data).eq("id", a["id"]).execute()
+        else:
+            supabase.table("document_todos").insert(todo_data).execute()
 
     # ---------- participants ----------
     participants = data.get("participants") or []
-
-    # 現存参加者
-    existing_participants_res = supabase.table("document_participants") \
-        .select("id") \
-        .eq("document_id", document_id) \
-        .execute()
-    existing_participant_ids = [p["id"] for p in existing_participants_res.data]
-
-    incoming_participant_ids = [p.get("id") for p in participants if p.get("id")]
-    to_delete_participants = list(set(existing_participant_ids) - set(incoming_participant_ids))
-    if to_delete_participants:
-        supabase.table("document_participants").delete().in_("id", to_delete_participants).execute()
-
-    participants_upsert = []
     for p in participants:
-        participants_upsert.append({
-            "id": p.get("id"),
+        participant_data = {
             "document_id": document_id,
             "name": p.get("name"),
-            "role": p.get("role"),
-            "slack_id": p.get("slack_id")
-        })
-
-    if participants_upsert:
-        supabase.table("document_participants").upsert(participants_upsert, on_conflict=["id"]).execute()
+            "role": p.get("role") or None
+        }
+        if p.get("id"):
+            supabase.table("document_participants").update(participant_data).eq("id", p["id"]).execute()
+        else:
+            supabase.table("document_participants").insert(participant_data).execute()
 
     return jsonify({"status": "ok", "document_id": document_id}), 200
 
