@@ -101,13 +101,14 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     try {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("ログイン情報がありません");
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
       const normalizedItems = (editableMinutes.actionItems || []).map(item => ({
         ...item,
         due_date: item.due_date || null,
       }));
 
-      const res = await fetch(`${API_BASE_URL}/functions/v1/slack_reminder`, {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/slack_reminder`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
