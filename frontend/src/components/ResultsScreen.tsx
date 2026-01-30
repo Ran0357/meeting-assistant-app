@@ -139,10 +139,15 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("ログイン情報がありません");
 
-      const items = (editableMinutes.actionItems || [])
-        .filter(i => i.description);
+      const items = (editableMinutes.actionItems || []).filter(
+        i => i.description && i.due_date && i.owner_name
+      );
 
-      if (!items.length) return alert("通知するタスクがありません");
+      if (!items.length) {
+        return alert(
+          "通知できるタスクがありません。\n※ タスクには必ず期限と担当者を設定してください"
+        );
+      }
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/slack_reminder`, {
         method: "POST",
