@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MeetingMinutes, ActionItem, Participant } from '../types';
 import { SaveIcon, SlackIcon } from './Icons';
+import { saveMinutes } from '../api/saveMinutes';
 
 interface ResultsScreenProps {
   minutes: MeetingMinutes;
@@ -112,16 +113,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ minutes, onReset }) => {
     };
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/save_minutes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error(await res.text());
+      await saveMinutes(payload, token);
 
       alert('保存完了！\n※ 期限付きタスクは、前日に自動でSlackに通知されます');
       setShowSaveForm(false);
