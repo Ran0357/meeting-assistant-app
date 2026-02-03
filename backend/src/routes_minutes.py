@@ -45,7 +45,9 @@ def save_minutes():
     document_id = data.get("id")
 
     try:
-        # ---------- documents ----------
+        # =============================
+        # documents
+        # =============================
         doc_data = {
             "title": data.get("title"),
             "summary": data.get("summary"),
@@ -65,7 +67,9 @@ def save_minutes():
                 .execute()
             document_id = res.data[0]["id"]
 
-        # ---------- action items ----------
+        # =============================
+        # action items
+        # =============================
         action_items = data.get("actionItems") or []
 
         existing = supabase.table("document_todos") \
@@ -80,6 +84,24 @@ def save_minutes():
             if not item.get("description"):
                 continue
 
+            # 既存 todo を取得
+            old_todo = None
+            if item.get("id"):
+                res = supabase.table("document_todos") \
+                    .select("description, owner_name, due_date, notified_before_at") \
+                    .eq("id", item["id"]) \
+                    .single() \
+                    .execute()
+                old_todo = res.data
+
+            # 🔥 前日通知リセット判定
+            important_changed = (
+                old_todo is None or
+                old_todo["description"] != item.get("description") or
+                old_todo["owner_name"] != item.get("owner_name") or
+                old_todo["due_date"] != item.get("due_date")
+            )
+
             todo_data = {
                 "document_id": document_id,
                 "description": item.get("description"),
@@ -87,7 +109,9 @@ def save_minutes():
                 "due_date": item.get("due_date"),
                 "status": item.get("status", "open"),
                 "notify_before": bool(item.get("due_date")),
-                "notified_before_at": item.get("notified_before_at"),
+                # 🔥 ここが核心
+                "notified_before_at": None if important_changed
+                    else (old_todo["notified_before_at"] if old_todo else None),
             }
 
             if item.get("id"):
@@ -102,6 +126,7 @@ def save_minutes():
                     .execute()
                 sent_ids.add(res.data[0]["id"])
 
+        # 削除された todo を消す
         delete_ids = existing_ids - sent_ids
         if delete_ids:
             supabase.table("document_todos") \
@@ -109,7 +134,9 @@ def save_minutes():
                 .in_("id", list(delete_ids)) \
                 .execute()
 
-        # ---------- participants ----------
+        # =============================
+        # participants
+        # =============================
         participants = data.get("participants") or []
 
         existing = supabase.table("document_participants") \

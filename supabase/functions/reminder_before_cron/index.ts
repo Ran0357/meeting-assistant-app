@@ -24,15 +24,17 @@ serve(async (_req) => {
   // =========================
   // 明日（JST）の日付
   // =========================
+  // JST基準で「明日」を YYYY-MM-DD で作る
   const now = new Date();
-  const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const jst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
 
-  const tomorrow = new Date(jstNow);
-  tomorrow.setDate(jstNow.getDate() + 1);
+  const tomorrow = new Date(jst);
+  tomorrow.setDate(jst.getDate() + 1);
 
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10); // YYYY-MM-DD
-
-  console.log("Tomorrow (JST):", tomorrowStr);
+  const y = tomorrow.getFullYear();
+  const m = String(tomorrow.getMonth() + 1).padStart(2, "0");
+  const d = String(tomorrow.getDate()).padStart(2, "0");
+  const tomorrowStr = `${y}-${m}-${d}`;
 
   // =========================
   // 前日通知対象を取得
