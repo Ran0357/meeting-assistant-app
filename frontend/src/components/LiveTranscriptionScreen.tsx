@@ -16,8 +16,9 @@ interface LiveTranscriptionScreenProps {
 const WATCHDOG_INTERVAL_MS = 2000; // 2秒ごとにチェック（負荷軽減）
 const WATCHDOG_SILENCE_LIMIT = 60000; // 無音60秒まで許容（会議の沈黙に対応）
 const WATCHDOG_SPEECH_LIMIT = 60000; // 発話中も60秒まで許容
-const SILENCE_COMMIT_MS = 3000; // 無音で3秒後に履歴化（少し長めに）
+const SILENCE_COMMIT_MS = 1200; // 無音で1.2秒後に履歴化（高速化）
 const AUTO_SAVE_INTERVAL_MS = 15000; // 15秒ごとに保存
+const MIN_BUFFER_LENGTH = 50; // 50文字以上で自動確定
 
 const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
   onMinutesGenerated,
@@ -166,9 +167,21 @@ const LiveTranscriptionScreen: React.FC<LiveTranscriptionScreenProps> = ({
       }
 
       if (finalText) bufferRef.current += finalText;
-      setCurrentTranscript(bufferRef.current + interim);
+      
+      // バッファが一定量以上なら即座に確定（データロス防止）
+      if (bufferRef.current.length >= MIN_BUFFER_LENGTH && finalText) {
+        const textToCommit = bufferRef.current.trim();
+        if (textToCommit) {
+          setTranscriptHistory(prev => [...prev, textToCommit]);
+          bufferRef.current = '';
+          setCurrentTranscript(interim); // interimだけ表示
+          console.log('Auto-committed due to buffer length:', textToCommit.length, 'chars');
+        }
+      } else {
+        setCurrentTranscript(bufferRef.current + interim);
+      }
 
-      // 無音で自動履歴化
+      // 無音で自動履歴化（高速化）
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = window.setTimeout(() => {
         if (bufferRef.current.trim()) {
